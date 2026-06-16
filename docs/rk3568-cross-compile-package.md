@@ -407,7 +407,7 @@ camera:
 
 ```bash
 mkdir -p /mnt/www/stream
-mkdir -p /userdata/www
+mkdir -p /userdata/www/media
 ```
 
 确认 ffmpeg 存在：
@@ -419,8 +419,8 @@ ffmpeg -version
 抓拍和录像依赖 `ffmpeg`：
 
 ```text
-/userdata/www/snapshot.jpg
-/userdata/www/record.mp4
+/userdata/www/media/snapshot_YYYYMMDD_HHMMSS_N.jpg
+/userdata/www/media/record_YYYYMMDD_HHMMSS_N.mp4
 ```
 
 确认 GStreamer 插件：
@@ -449,21 +449,42 @@ gst-inspect-1.0 hlssink
 ```text
 HLS 切片: /mnt/www/stream/*.ts
 HLS 播放列表: /mnt/www/stream/stream.m3u8
-抓拍照片: /userdata/www/snapshot.jpg
-录像文件: /userdata/www/record.mp4
+抓拍照片: /userdata/www/media/snapshot_YYYYMMDD_HHMMSS_N.jpg
+录像文件: /userdata/www/media/record_YYYYMMDD_HHMMSS_N.mp4
 ```
 
 网页访问地址：
 
 ```text
 http://RK3568_IP:8080/stream/stream.m3u8
-http://RK3568_IP:8080/snapshot.jpg
-http://RK3568_IP:8080/record.mp4
+http://RK3568_IP:8080/media/snapshot_YYYYMMDD_HHMMSS_N.jpg
+http://RK3568_IP:8080/media/record_YYYYMMDD_HHMMSS_N.mp4
 ```
 
-## 12. 常见问题
+## 12. 低延迟视频参数
 
-### 12.1 板子上网页打不开
+当前项目使用 HLS 播放视频。HLS 比 WebRTC 稳定、部署简单，但天然会有切片缓冲延迟。
+
+当前稳定低延迟方案是：
+
+```text
+后端 hlssink: target-duration=1 max-files=5
+前端 HLS.js: liveSyncDurationCount=1, liveMaxLatencyDurationCount=3
+```
+
+这套参数已经把延迟从约 7-8 秒压到约 2.5 秒，同时保持了较好的播放稳定性。
+
+如果后续发现画面卡顿，优先把前端 `liveSyncDurationCount` 改回默认，也就是把 `www/index.html` 里的 `new Hls({...})` 改回：
+
+```js
+hlsInstance = new Hls();
+```
+
+如果后续必须接近 1 秒以内，就不建议继续硬压 HLS 参数了，可以再评估 WebRTC、RTSP 低延迟播放器，或者 MJPEG 预览流。
+
+## 13. 常见问题
+
+### 13.1 板子上网页打不开
 
 在板子上检查 8080 是否监听：
 
@@ -487,7 +508,7 @@ http://板子IP:8080/
 
 不是 `127.0.0.1`。
 
-### 12.2 启动时报 MQTT 错误
+### 13.2 启动时报 MQTT 错误
 
 如果你暂时不用 MQTT，可以先忽略。网页和视频服务仍然能启动。
 
@@ -513,7 +534,7 @@ mqtt:
 
 然后重新打包或直接修改板子上 `/opt/iotgw_package/config/environments/rk3568.yaml`。
 
-### 12.3 点击开启视频失败
+### 13.3 点击开启视频失败
 
 按顺序检查：
 
@@ -528,7 +549,7 @@ ls -ld /mnt/www/stream /userdata/www
 
 再看程序终端日志里有没有 GStreamer pipeline 的报错。
 
-### 12.4 编译时报找不到 gstreamer-1.0
+### 13.4 编译时报找不到 gstreamer-1.0
 
 当前项目已经改成运行时调用 `gst-launch-1.0`，正常不会再因为缺少 `gstreamer-1.0.pc` 导致 CMake 失败。
 
@@ -556,7 +577,7 @@ cmake -S . -B build-rk3568 \
 cmake --build build-rk3568 -j"$(nproc)"
 ```
 
-## 13. 每次修改代码后的固定操作
+## 14. 每次修改代码后的固定操作
 
 以后你每次改完项目，基本就按这几步走。这个流程会同时更新后端程序、`www/index.html` 前端页面、配置文件。
 

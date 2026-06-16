@@ -105,6 +105,16 @@ class MongooseServer {
         return;
       }
 
+      if (uri.compare(0, std::string("/media/").size(), "/media/") == 0) {
+        struct mg_http_serve_opts opts = {};
+        const std::string media_mapping = "/media=" + options_.media_root + "/media";
+        opts.root_dir = media_mapping.c_str();
+        opts.extra_headers = "Cache-Control: no-cache\r\n";
+        opts.mime_types = ".mp4=video/mp4,.jpg=image/jpeg";
+        mg_http_serve_dir(c, hm, &opts);
+        return;
+      }
+
       if (uri == "/snapshot.jpg" || uri == "/record.mp4") {
         struct mg_http_serve_opts opts = {};
         opts.root_dir = options_.media_root.c_str();

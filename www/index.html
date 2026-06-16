@@ -471,7 +471,10 @@
                 const streamUrl = `${STREAM_URL}?t=${Date.now()}`;
 
                 if (Hls.isSupported()) {
-                    hlsInstance = new Hls();
+                    hlsInstance = new Hls({
+                        liveSyncDurationCount: 1,
+                        liveMaxLatencyDurationCount: 3
+                    });
                     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
                         const detail = data && data.details ? data.details : 'unknown';
                         const type = data && data.type ? data.type : 'unknown';
@@ -532,8 +535,8 @@
         async function takeSnapshot() {
             try {
                 addLog('正在拍照...');
-                await sendCommand(API_SNAPSHOT, { method: 'POST' });
-                addLog('✅ 拍照成功！照片已保存至 /userdata/www/snapshot.jpg');
+                const result = await sendCommand(API_SNAPSHOT, { method: 'POST' });
+                addLog(`✅ 拍照成功！照片已保存：${result.url || '/media/'}`);
             } catch (err) {
                 addLog(`❌ 拍照失败: ${err.message}`);
             }
@@ -549,10 +552,10 @@
                 // 开始录像
                 try {
                     addLog('正在启动录像...');
-                    await sendCommand(API_START_RECORD, { method: 'POST' });
+                    const result = await sendCommand(API_START_RECORD, { method: 'POST' });
                     recordStarted = true;
                     recordBtn.innerHTML = '⏹ 停止录制';
-                    addLog('✅ 录像已开始');
+                    addLog(`✅ 录像已开始：${result.url || '/media/'}`);
                 } catch (err) {
                     addLog(`❌ 录像启动失败: ${err.message}`);
                 }
@@ -560,10 +563,10 @@
                 // 停止录像
                 try {
                     addLog('正在停止录像...');
-                    await sendCommand(API_STOP_RECORD, { method: 'POST' });
+                    const result = await sendCommand(API_STOP_RECORD, { method: 'POST' });
                     recordStarted = false;
                     recordBtn.innerHTML = '🔴 视频录制';
-                    addLog('✅ 录像已保存至 /userdata/www/record.mp4');
+                    addLog(`✅ 录像已保存：${result.url || '/media/'}`);
                 } catch (err) {
                     addLog(`⚠️ 停止录像出错: ${err.message}`);
                 }

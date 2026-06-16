@@ -1,7 +1,9 @@
 #include "services/system_services/camera/camera_manager.hpp"
 
+#include <ctime>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <utility>
 
@@ -56,7 +58,7 @@ CameraResult CameraManager::StartStream() {
            << "! mpegtsmux "
            << "! hlssink location=" << options_.stream_root
            << "/segment%05d.ts playlist-location=" << StreamPlaylistPath()
-           << " target-duration=2 max-files=5";
+           << " target-duration=1 max-files=5";
 
   const std::string cmd = "sh -c '" + pipeline.str() + " > /tmp/iotgw_gst.log 2>&1 & echo $! > " +
                           StreamPidPath() + "'";
@@ -94,13 +96,14 @@ CameraResult CameraManager::Snapshot() {
   if (!streaming_) {
     return {false, "stream_not_started", ""};
   }
+  const std::string filename = MakeMediaName("snapshot", "jpg");
   const std::string cmd = "ffmpeg -y -i " + StreamPlaylistPath() +
-                          " -vframes 1 -q:v 2 " + SnapshotPath() +
+                          " -vframes 1 -q:v 2 " + MediaPath(filename) +
                           " > /dev/null 2>&1";
   if (RunCommand(cmd) != 0) {
     return {false, "snapshot_failed", ""};
   }
-  return {true, "snapshot_saved", "/snapshot.jpg"};
+  return {true, "snapshot_saved", MediaUrl(filename)};
 }
 
 CameraResult CameraManager::StartRecord() {
@@ -108,26 +111,31 @@ CameraResult CameraManager::StartRecord() {
     return {false, "stream_not_started", ""};
   }
   if (recording_) {
-    return {true, "already_recording", "/record.mp4"};
+    return {true, "already_recording", MediaUrl(current_record_file_)};
   }
+  current_record_file_ = MakeMediaName("record", "mp4");
   const std::string cmd = "ffmpeg -y -i " + StreamPlaylistPath() +
-                          " -c copy " + RecordPath() +
+                          " -c copy " + MediaPath(current_record_file_) +
                           " > /dev/null 2>&1 & echo $! > " + RecordPidPath();
   if (RunCommand(cmd) != 0) {
+    current_record_file_.clear();
     return {false, "record_start_failed", ""};
   }
   recording_ = true;
-  return {true, "record_started", ""};
+  return {true, "record_started", MediaUrl(current_record_file_)};
 }
 
 CameraResult CameraManager::StopRecord() {
   if (!recording_) {
-    return {true, "not_recording", "/record.mp4"};
+    return {true, "not_recording",
+            current_record_file_.empty() ? "" : MediaUrl(current_record_file_)};
   }
   RunCommand("kill -2 $(cat " + RecordPidPath() +
              ") 2>/dev/null; rm -f " + RecordPidPath());
   recording_ = false;
-  return {true, "record_saved", "/record.mp4"};
+  const std::string url = current_record_file_.empty() ? "" : MediaUrl(current_record_file_);
+  current_record_file_.clear();
+  return {true, "record_saved", url};
 }
 
 CameraResult CameraManager::Status() const {
@@ -135,7 +143,8 @@ CameraResult CameraManager::Status() const {
 }
 
 bool CameraManager::EnsureDirs() const {
-  return RunCommand("mkdir -p " + options_.stream_root + " " + options_.media_root) == 0;
+  return RunCommand("mkdir -p " + options_.stream_root + " " +
+                    options_.media_root + "/media") == 0;
 }
 
 bool CameraManager::FileExists(const std::string& path) const {
@@ -143,16 +152,31 @@ bool CameraManager::FileExists(const std::string& path) const {
   return in.good();
 }
 
+std::string CameraManager::MakeMediaName(const std::string& prefix,
+                                         const std::string& ext) {
+  const std::time_t now = std::time(nullptr);
+  std::tm tm_value {};
+#if defined(_WIN32)
+  localtime_s(&tm_value, &now);
+#else
+  localtime_r(&now, &tm_value);
+#endif
+  std::ostringstream out;
+  out << prefix << "_" << std::put_time(&tm_value, "%Y%m%d_%H%M%S") << "_"
+      << ++media_sequence_ << "." << ext;
+  return out.str();
+}
+
+std::string CameraManager::MediaPath(const std::string& filename) const {
+  return options_.media_root + "/media/" + filename;
+}
+
+std::string CameraManager::MediaUrl(const std::string& filename) const {
+  return filename.empty() ? "" : "/media/" + filename;
+}
+
 std::string CameraManager::StreamPlaylistPath() const {
   return options_.stream_root + "/stream.m3u8";
-}
-
-std::string CameraManager::SnapshotPath() const {
-  return options_.media_root + "/snapshot.jpg";
-}
-
-std::string CameraManager::RecordPath() const {
-  return options_.media_root + "/record.mp4";
 }
 
 std::string CameraManager::StreamPidPath() const {

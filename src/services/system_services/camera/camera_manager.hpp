@@ -42,9 +42,11 @@ class CameraManager {
  private:
   bool EnsureDirs() const;
   bool FileExists(const std::string& path) const;
+  std::string MakeMediaName(const std::string& prefix,
+                            const std::string& ext);
+  std::string MediaPath(const std::string& filename) const;
+  std::string MediaUrl(const std::string& filename) const;
   std::string StreamPlaylistPath() const;
-  std::string SnapshotPath() const;
-  std::string RecordPath() const;
   std::string StreamPidPath() const;
   std::string RecordPidPath() const;
   int RunCommand(const std::string& command) const;
@@ -53,6 +55,8 @@ class CameraManager {
   bool initialized_ = false;
   bool streaming_ = false;
   bool recording_ = false;
+  int media_sequence_ = 0;
+  std::string current_record_file_;
   std::shared_ptr<core::common::log::Logger> logger_;
 };
 
