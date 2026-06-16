@@ -1,0 +1,22 @@
+automation_rules:
+  - id: cooling_on
+    enabled: true
+    when:
+      sensor_id: temp
+      op: ">"
+      value: 55
+    then:
+      - type: actuator_set
+        actuator_id: motor
+        value: 1
+
+  - id: cooling_off
+    enabled: true
+    when:
+      sensor_id: temp
+      op: "<"
+      value: 50
+    then:
+      - type: actuator_set
+        actuator_id: motor
+        value: 0

@@ -1,0 +1,4 @@
+#pragma once
+
+#define IOTGW_VERSION "@PROJECT_VERSION@"
+#define IOTGW_NAME "@PROJECT_NAME@"

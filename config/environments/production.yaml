@@ -1,0 +1,31 @@
+name: IoTEdgeGateway
+env: production
+
+paths:
+  config_root: config
+  data_dir: data
+  log_file: data/logs/iotgw.log
+  www_root: www
+
+logging:
+  level: info
+  file_sink_enabled: true
+
+network:
+  http_api:
+    host: 0.0.0.0
+    port: 8080
+    base_path: /api
+  websocket:
+    path: /ws
+
+mqtt:
+  enabled: false
+  broker_host: "127.0.0.1"
+  broker_port: 1883
+  client_id: iotgw-prod
+  username: ""
+  password: ""
+  keepalive_sec: 30
+  clean_session: true
+  topic_prefix: "iotgw/prod/"

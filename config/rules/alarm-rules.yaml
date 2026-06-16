@@ -1,0 +1,11 @@
+alarm_rules:
+  - id: high_temp
+    enabled: true
+    when:
+      sensor_id: temp
+      op: ">"
+      value: 60
+    then:
+      - type: log
+        level: warn
+        message: "Temperature too high"

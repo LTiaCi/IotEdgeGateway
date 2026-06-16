@@ -1,10 +1,10 @@
 name: IoTEdgeGateway
-env: development
+env: rk3568
 
 paths:
   config_root: config
   data_dir: data
-  log_file: data/logs/iotgw-dev.log
+  log_file: data/logs/iotgw-rk3568.log
   www_root: www
 
 logging:
@@ -20,12 +20,21 @@ network:
     path: /ws
 
 mqtt:
-  enabled: false
+  enabled: true
   broker_host: "127.0.0.1"
   broker_port: 1883
-  client_id: iotgw-dev
+  client_id: iotgw-rk3568
   username: ""
   password: ""
   keepalive_sec: 30
   clean_session: true
   topic_prefix: "iotgw/dev/"
+
+camera:
+  device: "/dev/video9"
+  stream_www_root: "/mnt/www"
+  stream_root: "/mnt/www/stream"
+  media_root: "/userdata/www"
+  width: 1280
+  height: 720
+  fps: 10
