@@ -34,13 +34,13 @@ bool CameraManager::Init(const CameraOptions& options) {
 
 CameraResult CameraManager::StartStream() {
 #if !defined(IOTGW_ENABLE_GSTREAMER)
-  return {false, "gstreamer_disabled", ""};
+  return {false, "gstreamer_disabled", "", ""};
 #else
   if (!initialized_ && !Init(options_)) {
-    return {false, "camera_init_failed", ""};
+    return {false, "camera_init_failed", "", ""};
   }
   if (streaming_) {
-    return {true, "already_streaming", "/stream/stream.m3u8"};
+    return {true, "already_streaming", "/stream/stream.m3u8", StreamPlaylistPath()};
   }
 
   RunCommand("rm -f " + options_.stream_root + "/*.ts " + options_.stream_root +
@@ -64,21 +64,21 @@ CameraResult CameraManager::StartStream() {
                           StreamPidPath() + "'";
   if (RunCommand(cmd) != 0 || !FileExists(StreamPidPath())) {
     if (logger_) logger_->Error("Camera stream process failed to start");
-    return {false, "stream_start_failed", ""};
+    return {false, "stream_start_failed", "", ""};
   }
 
   streaming_ = true;
   if (logger_) logger_->Info("Camera HLS stream process started");
-  return {true, "stream_started", "/stream/stream.m3u8"};
+  return {true, "stream_started", "/stream/stream.m3u8", StreamPlaylistPath()};
 #endif
 }
 
 CameraResult CameraManager::StopStream() {
 #if !defined(IOTGW_ENABLE_GSTREAMER)
-  return {false, "gstreamer_disabled", ""};
+  return {false, "gstreamer_disabled", "", ""};
 #else
   if (!streaming_) {
-    return {true, "not_streaming", ""};
+    return {true, "not_streaming", "", ""};
   }
 
   RunCommand("kill -2 $(cat " + StreamPidPath() +
@@ -88,30 +88,32 @@ CameraResult CameraManager::StopStream() {
   RunCommand("rm -f " + options_.stream_root + "/*.ts " + options_.stream_root +
              "/*.m3u8");
   if (logger_) logger_->Info("Camera HLS stream process stopped");
-  return {true, "stream_stopped", ""};
+  return {true, "stream_stopped", "", ""};
 #endif
 }
 
 CameraResult CameraManager::Snapshot() {
   if (!streaming_) {
-    return {false, "stream_not_started", ""};
+    return {false, "stream_not_started", "", ""};
   }
   const std::string filename = MakeMediaName("snapshot", "jpg");
+  const std::string path = MediaPath(filename);
   const std::string cmd = "ffmpeg -y -i " + StreamPlaylistPath() +
-                          " -vframes 1 -q:v 2 " + MediaPath(filename) +
+                          " -vframes 1 -q:v 2 " + path +
                           " > /dev/null 2>&1";
   if (RunCommand(cmd) != 0) {
-    return {false, "snapshot_failed", ""};
+    return {false, "snapshot_failed", "", ""};
   }
-  return {true, "snapshot_saved", MediaUrl(filename)};
+  return {true, "snapshot_saved", MediaUrl(filename), path};
 }
 
 CameraResult CameraManager::StartRecord() {
   if (!streaming_) {
-    return {false, "stream_not_started", ""};
+    return {false, "stream_not_started", "", ""};
   }
   if (recording_) {
-    return {true, "already_recording", MediaUrl(current_record_file_)};
+    return {true, "already_recording", MediaUrl(current_record_file_),
+            MediaPath(current_record_file_)};
   }
   current_record_file_ = MakeMediaName("record", "mp4");
   const std::string cmd = "ffmpeg -y -i " + StreamPlaylistPath() +
@@ -119,27 +121,33 @@ CameraResult CameraManager::StartRecord() {
                           " > /dev/null 2>&1 & echo $! > " + RecordPidPath();
   if (RunCommand(cmd) != 0) {
     current_record_file_.clear();
-    return {false, "record_start_failed", ""};
+    return {false, "record_start_failed", "", ""};
   }
   recording_ = true;
-  return {true, "record_started", MediaUrl(current_record_file_)};
+  return {true, "record_started", MediaUrl(current_record_file_),
+          MediaPath(current_record_file_)};
 }
 
 CameraResult CameraManager::StopRecord() {
   if (!recording_) {
     return {true, "not_recording",
-            current_record_file_.empty() ? "" : MediaUrl(current_record_file_)};
+            current_record_file_.empty() ? "" : MediaUrl(current_record_file_),
+            current_record_file_.empty() ? "" : MediaPath(current_record_file_)};
   }
   RunCommand("kill -2 $(cat " + RecordPidPath() +
              ") 2>/dev/null; rm -f " + RecordPidPath());
   recording_ = false;
   const std::string url = current_record_file_.empty() ? "" : MediaUrl(current_record_file_);
+  const std::string path =
+      current_record_file_.empty() ? "" : MediaPath(current_record_file_);
   current_record_file_.clear();
-  return {true, "record_saved", url};
+  return {true, "record_saved", url, path};
 }
 
 CameraResult CameraManager::Status() const {
-  return {true, streaming_ ? "streaming" : "idle", streaming_ ? "/stream/stream.m3u8" : ""};
+  return {true, streaming_ ? "streaming" : "idle",
+          streaming_ ? "/stream/stream.m3u8" : "",
+          streaming_ ? StreamPlaylistPath() : ""};
 }
 
 bool CameraManager::EnsureDirs() const {

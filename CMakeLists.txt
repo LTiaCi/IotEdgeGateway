@@ -13,6 +13,14 @@ set(IOTGW_MONGOOSE_DIR
   CACHE PATH "Path to a local mongoose source directory")
 option(IOTGW_ENABLE_GSTREAMER "Enable RK3568 gst-launch camera/HLS runtime support" OFF)
 
+find_path(SQLITE3_INCLUDE_DIR sqlite3.h)
+find_library(SQLITE3_LIBRARY sqlite3)
+if(NOT SQLITE3_INCLUDE_DIR OR NOT SQLITE3_LIBRARY)
+  message(FATAL_ERROR
+    "SQLite3 development files were not found in the toolchain/sysroot. "
+    "Need sqlite3.h and libsqlite3.so to build database support.")
+endif()
+
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in
   ${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp
@@ -44,10 +52,12 @@ set(IOTGW_COMMON_SOURCES
   src/core/common/logger/file_logger.cpp
   src/core/device/manager/device_registry.cpp
   src/services/system_services/camera/camera_manager.cpp
+  src/services/storage/database_service.cpp
   src/core/protocol_adapters/mqtt_adapter/mqtt_client.cpp
   src/services/web_services/api/system_api.cpp
   src/services/web_services/api/device_api.cpp
   src/services/web_services/api/camera_api.cpp
+  src/services/web_services/api/database_api.cpp
   src/services/web_services/api/rule_api.cpp
 )
 
@@ -56,8 +66,9 @@ target_include_directories(iotgw_common
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_BINARY_DIR}/generated
+    ${SQLITE3_INCLUDE_DIR}
 )
-target_link_libraries(iotgw_common PUBLIC mongoose_lib)
+target_link_libraries(iotgw_common PUBLIC mongoose_lib ${SQLITE3_LIBRARY})
 
 if(IOTGW_ENABLE_GSTREAMER)
   target_compile_definitions(iotgw_common PUBLIC IOTGW_ENABLE_GSTREAMER=1)

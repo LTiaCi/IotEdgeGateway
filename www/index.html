@@ -296,6 +296,121 @@
             font-size: 12px;
             color: #94a3b8;
         }
+
+        .db-panel {
+            margin-top: 20px;
+            min-height: 220px;
+        }
+
+        .db-toolbar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .db-tab {
+            border: 1px solid #dbe3f0;
+            background: #f8fafc;
+            color: #475569;
+            border-radius: 8px;
+            padding: 8px 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .db-tab.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+
+        .db-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            color: #475569;
+        }
+
+        .db-summary-item {
+            background: #f8fafc;
+            border: 1px solid #edf2f7;
+            border-radius: 8px;
+            padding: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .db-list {
+            border: 1px solid #edf2f7;
+            border-radius: 10px;
+            overflow: auto;
+            max-height: 260px;
+            background: #fff;
+        }
+
+        .db-row {
+            display: grid;
+            grid-template-columns: 150px 100px 1fr;
+            gap: 10px;
+            align-items: start;
+            padding: 9px 10px;
+            border-bottom: 1px solid #edf2f7;
+            font-size: 12px;
+        }
+
+        .db-row:last-child {
+            border-bottom: none;
+        }
+
+        .db-time {
+            color: #64748b;
+            white-space: nowrap;
+        }
+
+        .db-kind {
+            color: #1f2937;
+            font-weight: 700;
+            word-break: break-all;
+        }
+
+        .db-detail {
+            color: #475569;
+            word-break: break-all;
+        }
+
+        @media (max-width: 1050px) {
+            body {
+                height: auto;
+            }
+
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sensor-row,
+            .db-summary {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .video-bar,
+            .sensor-row,
+            .db-toolbar,
+            .db-summary {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .db-row {
+                grid-template-columns: 1fr;
+                gap: 4px;
+            }
+        }
     </style>
 </head>
 
@@ -345,6 +460,29 @@
                     <div class="s-unit">Status</div>
                 </div>
             </div>
+
+            <div class="card db-panel">
+                <div class="card-title">🗄️ 数据库记录</div>
+                <div class="db-toolbar">
+                    <button class="db-tab active" data-db-tab="sensors">传感器</button>
+                    <button class="db-tab" data-db-tab="media">照片/视频</button>
+                    <button class="db-tab" data-db-tab="commands">控制命令</button>
+                    <button class="db-tab" data-db-tab="logs">运行日志</button>
+                </div>
+                <div class="db-summary" id="db_summary">
+                    <div class="db-summary-item">传感器: --</div>
+                    <div class="db-summary-item">媒体: --</div>
+                    <div class="db-summary-item">命令: --</div>
+                    <div class="db-summary-item">日志: --</div>
+                </div>
+                <div class="db-list" id="db_list">
+                    <div class="db-row">
+                        <div class="db-time">--</div>
+                        <div class="db-kind">等待数据</div>
+                        <div class="db-detail">数据库打开后会显示最近记录</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 右侧 -->
@@ -356,13 +494,17 @@
                 <div class="control-item">
                     <div class="label-row"><span>LED 照明灯</span><label class="switch"><input type="checkbox" id="led_sw"
                                 onchange="updateLed()"><span class="slider"></span></label></div>
-                    <input type="range" id="led_br" value="50" onchange="updateLed()">
+                    <input type="range" id="led_br" value="50" min="0" max="100" oninput="scheduleLedUpdate()"
+                        onchange="updateLed()">
+                    <div class="s-unit"><span id="led_br_text">50</span>%</div>
                 </div>
 
                 <div class="control-item">
                     <div class="label-row"><span>直流电机控制</span><label class="switch"><input type="checkbox" id="motor_sw"
                                 onchange="updateMotor()"><span class="slider"></span></label></div>
-                    <input type="range" id="motor_sp" value="30" onchange="updateMotor()">
+                    <input type="range" id="motor_sp" value="30" min="0" max="100" oninput="scheduleMotorUpdate()"
+                        onchange="updateMotor()">
+                    <div class="s-unit"><span id="motor_sp_text">30</span>%</div>
                     <div class="dir-btns">
                         <button id="dir_f" class="btn-dir active" onclick="setMotorDirUser(0)">正向旋转</button>
                         <button id="dir_r" class="btn-dir" onclick="setMotorDirUser(1)">反向旋转</button>
@@ -371,7 +513,7 @@
 
                 <div class="control-item" style="border-left: 4px solid var(--warning); margin-bottom: 0;">
                     <div class="label-row"><span>紧急蜂鸣报警</span><label class="switch"><input type="checkbox"
-                                id="buzzer_sw" onchange="cmd('buzzer', this.checked?'on':'off')"><span
+                                id="buzzer_sw" onchange="updateBuzzer()"><span
                                 class="slider"></span></label></div>
                 </div>
             </div>
@@ -411,6 +553,8 @@
         const recordBtn = document.getElementById('recordBtn');
 
         let currentDir = 0;
+        let activeDbTab = 'sensors';
+        let dbPolling = false;
 
         // 写入日志函数（增强，兼容视频流日志）
         function addLog(msg) {
@@ -433,6 +577,77 @@
                 addLog(`接口请求失败: ${err.message}`);
                 console.error('API Error:', err);
                 throw err;
+            }
+        }
+
+        function formatDbTime(tsMs) {
+            if (!tsMs) return '--';
+            const date = new Date(Number(tsMs));
+            if (Number.isNaN(date.getTime())) return '--';
+            return date.toLocaleString();
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function dbRow(time, kind, detail) {
+            return `<div class="db-row">
+                <div class="db-time">${escapeHtml(time)}</div>
+                <div class="db-kind">${escapeHtml(kind)}</div>
+                <div class="db-detail">${escapeHtml(detail)}</div>
+            </div>`;
+        }
+
+        function renderDbRows(tab, rows) {
+            const list = document.getElementById('db_list');
+            if (!rows || rows.length === 0) {
+                list.innerHTML = dbRow('--', '暂无记录', '等待新数据写入 SQLite');
+                return;
+            }
+            list.innerHTML = rows.map(row => {
+                if (tab === 'sensors') {
+                    return dbRow(formatDbTime(row.ts_ms), row.device_id,
+                        `value=${row.value}, topic=${row.topic}, payload=${row.payload}`);
+                }
+                if (tab === 'media') {
+                    return dbRow(formatDbTime(row.ts_ms), row.media_type,
+                        `${row.url || ''} ${row.file_path || ''} ${row.message || ''}`);
+                }
+                if (tab === 'commands') {
+                    return dbRow(formatDbTime(row.ts_ms), row.device_id,
+                        `ok=${row.ok}, topic=${row.topic}, payload=${row.payload}`);
+                }
+                return dbRow(formatDbTime(row.ts_ms), row.level, row.message);
+            }).join('');
+        }
+
+        async function refreshDatabasePanel() {
+            if (dbPolling) return;
+            dbPolling = true;
+            try {
+                const summaryRes = await fetch('/api/db/summary', { cache: 'no-store' });
+                const summary = await summaryRes.json();
+                document.getElementById('db_summary').innerHTML = `
+                    <div class="db-summary-item">传感器: ${summary.sensor_samples ?? 0}</div>
+                    <div class="db-summary-item">媒体: ${summary.media_files ?? 0}</div>
+                    <div class="db-summary-item">命令: ${summary.actuator_commands ?? 0}</div>
+                    <div class="db-summary-item">日志: ${summary.runtime_logs ?? 0}</div>
+                `;
+
+                const rowsRes = await fetch(`/api/db/${activeDbTab}?limit=20`, { cache: 'no-store' });
+                const rowsData = await rowsRes.json();
+                renderDbRows(activeDbTab, rowsData.rows || []);
+            } catch (err) {
+                document.getElementById('db_list').innerHTML =
+                    dbRow('--', '读取失败', err.message);
+            } finally {
+                dbPolling = false;
             }
         }
 
@@ -573,38 +788,62 @@
             }
         }
 
-      function cmd() {
-    const payload = {
-        led_on: document.getElementById('led_sw').checked ? 1 : 0,
-        led_br: parseInt(document.getElementById('led_br').value),
-        motor_on: document.getElementById('motor_sw').checked ? 1 : 0,
-        motor_sp: parseInt(document.getElementById('motor_sp').value),
-        motor_dir: currentDir,  
-        buzzer: document.getElementById('buzzer_sw').checked ? 1 : 0
-    };
+        let controlBusyUntil = 0;
+        let ledUpdateTimer = null;
+        let motorUpdateTimer = null;
 
-    const msg = {
-        type: "control",
-        payload: payload
-    };
+        async function sendActuatorCommand(id, payload, label) {
+            controlBusyUntil = Date.now() + 1500;
+            addLog(`${label}: ${JSON.stringify(payload)}`);
+            try {
+                const res = await fetch(`/api/actuators/${id}/set`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || `HTTP ${res.status}`);
+                }
+                if (result.ok) {
+                    addLog(`✅ ${label} 已下发到 MQTT`);
+                } else {
+                    addLog(`❌ ${label} 未下发: ${JSON.stringify(result)}`);
+                }
+            } catch (err) {
+                addLog(`❌ ${label} 失败: ${err.message}`);
+            }
+        }
 
-    addLog(`发送指令: ${JSON.stringify(msg)}`);
+        function updateLedBrightnessLabel() {
+            document.getElementById('led_br_text').innerText = document.getElementById('led_br').value;
+        }
 
-    fetch('/api/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(msg)
-    }).catch(err => {
-        addLog(`指令发送失败: ${err.message}`);
-    });
-}
+        function updateMotorSpeedLabel() {
+            document.getElementById('motor_sp_text').innerText = document.getElementById('motor_sp').value;
+        }
 
+        function scheduleLedUpdate() {
+            updateLedBrightnessLabel();
+            clearTimeout(ledUpdateTimer);
+            ledUpdateTimer = setTimeout(updateLed, 200);
+        }
+
+        function scheduleMotorUpdate() {
+            updateMotorSpeedLabel();
+            clearTimeout(motorUpdateTimer);
+            motorUpdateTimer = setTimeout(updateMotor, 200);
+        }
 
         function updateLed() {
             const sw = document.getElementById('led_sw').checked ? '开启' : '关闭';
-            const br = document.getElementById('led_br').value;
+            const br = parseInt(document.getElementById('led_br').value, 10);
+            updateLedBrightnessLabel();
             addLog(`LED调整: ${sw}, 亮度 ${br}%`);
-            cmd();
+            sendActuatorCommand('led', {
+                on: document.getElementById('led_sw').checked ? 1 : 0,
+                br
+            }, 'LED控制');
         }
 
         function setMotorDirUI(dir) {
@@ -616,22 +855,33 @@
 
 function setMotorDirUser(dir) {
     setMotorDirUI(dir);
+    document.getElementById('motor_sw').checked = true;
     addLog(`电机方向切换: ${dir === 0 ? '正转' : '反转'}`);
-    cmd();   // ✅ 只有用户操作才发
+    updateMotor();
 }
 
 
 
         function updateMotor() {
     const sw = document.getElementById('motor_sw').checked ? '开启' : '关闭';
-    const sp = document.getElementById('motor_sp').value;
-
-    cmd();
+    const sp = parseInt(document.getElementById('motor_sp').value, 10);
+    updateMotorSpeedLabel();
 
     addLog(
         `电机控制: ${sw}, 速度 ${sp}%, 方向 ${currentDir === 0 ? '正转' : '反转'}`
     );
+    sendActuatorCommand('motor', {
+        on: document.getElementById('motor_sw').checked ? 1 : 0,
+        sp,
+        dir: currentDir
+    }, '电机控制');
 }
+
+        function updateBuzzer() {
+            const on = document.getElementById('buzzer_sw').checked ? 1 : 0;
+            addLog(`蜂鸣器: ${on ? '开启' : '关闭'}`);
+            sendActuatorCommand('buzzer', { on }, '蜂鸣器控制');
+        }
         // ========== 事件绑定 ==========
         // 视频流按钮绑定
         streamStartBtn.onclick = startStream;
@@ -639,34 +889,65 @@ function setMotorDirUser(dir) {
         snapshotBtn.onclick = takeSnapshot;
         recordBtn.onclick = toggleRecord;
 
+        document.querySelectorAll('.db-tab').forEach(btn => {
+            btn.onclick = () => {
+                activeDbTab = btn.dataset.dbTab;
+                document.querySelectorAll('.db-tab').forEach(tab => {
+                    tab.classList.toggle('active', tab === btn);
+                });
+                refreshDatabasePanel();
+            };
+        });
+
         // 定时拉取传感器数据
-        setInterval(() => {
-            fetch('/api/status').then(r => r.json()).then(data => {
+        let statusPolling = false;
+        async function refreshStatus() {
+            if (statusPolling) return;
+            statusPolling = true;
+            try {
+                const r = await fetch('/api/status', {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                const data = await r.json();
                 // 渲染传感器数据
                 document.getElementById('val_temp').innerText = data.temp || '--';
                 document.getElementById('val_humi').innerText = data.humi || '--';
                 document.getElementById('val_light').innerText = data.light || '--';
                 const irBox = document.getElementById('val_ir');
-                irBox.innerText = data.ir>2000 ? "☢ 有人" : "安全";
-                irBox.style.color = data.ir ? "var(--danger)" : "var(--success)";
+                const irValue = Number(data.ir || 0);
+                const irActive = irValue > 0;
+                irBox.innerText = irActive ? "☢ 有人" : "安全";
+                irBox.style.color = irActive ? "var(--danger)" : "var(--success)";
 
-                // 同步硬件状态到前端控件
-                document.getElementById('led_sw').checked = data.led_on === 1;
-                document.getElementById('led_br').value = data.led_br || 50;
-                document.getElementById('motor_sw').checked = data.motor_on === 1;
-                document.getElementById('motor_sp').value = data.motor_sp || 30;
-                setMotorDirUI(data.motor_dir);
-                document.getElementById('buzzer_sw').checked = data.buzzer === 1;
+                // 同步硬件状态到前端控件。用户刚操作时先不回写，避免滑条/开关被轮询覆盖。
+                if (Date.now() > controlBusyUntil) {
+                    document.getElementById('led_sw').checked = data.led_on === 1;
+                    document.getElementById('led_br').value = data.led_br || 50;
+                    updateLedBrightnessLabel();
+                    document.getElementById('motor_sw').checked = data.motor_on === 1;
+                    document.getElementById('motor_sp').value = data.motor_sp || 30;
+                    updateMotorSpeedLabel();
+                    setMotorDirUI(data.motor_dir);
+                    document.getElementById('buzzer_sw').checked = data.buzzer === 1;
+                }
 
                 // 恢复连接状态
                 document.getElementById('conn_status').innerText = "● 设备在线";
                 document.getElementById('conn_status').style.color = "#fff";
-            }).catch(e => {
+            } catch (e) {
                 document.getElementById('conn_status').innerText = "● 连接断开";
                 document.getElementById('conn_status').style.color = "#ff4d4d";
                 addLog(`传感器数据获取失败: ${e.message}`);
-            });
-        }, 1000);
+            } finally {
+                statusPolling = false;
+            }
+        }
+
+        refreshStatus();
+        setInterval(refreshStatus, 1000);
+        refreshDatabasePanel();
+        setInterval(refreshDatabasePanel, 3000);
 
         // 初始化日志
         addLog('[系统] 页面加载完成，设备控制就绪');

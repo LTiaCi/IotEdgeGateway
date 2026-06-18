@@ -9,6 +9,7 @@
 #include "core/device/model/device_entity.hpp"
 #include "core/protocol_adapters/mqtt_adapter/mqtt_adapter.hpp"
 #include "services/system_services/camera/camera_manager.hpp"
+#include "services/storage/database_service.hpp"
 #include "services/web_services/api/rest_api.hpp"
 #include "services/web_services/websocket/websocket_server.hpp"
 #include "version.hpp"
@@ -35,6 +36,7 @@ using MqttClient = core::protocol_adapters::mqtt_adapter::MqttClient;
 using MongooseServer = services::web_services::websocket::MongooseServer;
 using RuleEngine = core::control::RuleEngine;
 using CameraManager = services::system_services::camera::CameraManager;
+using DatabaseService = services::storage::DatabaseService;
 namespace json = iotgw::core::common::json;
 
 volatile std::sig_atomic_t g_running = 1;
@@ -76,8 +78,10 @@ std::string ValueAfterColon(const std::string& line) {
   return pos == std::string::npos ? "" : StripQuotes(line.substr(pos + 1));
 }
 
-std::shared_ptr<Logger> BuildLogger(const ConfigManager& cfg,
-                                    const GatewayArgs& args) {
+std::shared_ptr<Logger> BuildLoggerWithDatabase(
+    const ConfigManager& cfg,
+    const GatewayArgs& args,
+    const std::shared_ptr<DatabaseService>& database) {
   auto sinks = std::make_shared<core::common::log::MultiSink>();
   sinks->Add(std::make_shared<core::common::log::ConsoleSink>());
 
@@ -90,6 +94,18 @@ std::shared_ptr<Logger> BuildLogger(const ConfigManager& cfg,
     if (file_sink->IsOpen()) {
       sinks->Add(file_sink);
     }
+  }
+  if (database) {
+    std::weak_ptr<DatabaseService> weak_database = database;
+    sinks->Add(std::make_shared<core::common::log::CallbackSink>(
+        [weak_database](Level level, const std::string& message) {
+          if (auto database = weak_database.lock()) {
+            if (database->IsOpen()) {
+              database->RecordLog(core::common::log::LevelName(level), message,
+                                  core::common::time::NowUnixMs());
+            }
+          }
+        }));
   }
 
   auto logger = std::make_shared<Logger>(sinks);
@@ -237,6 +253,10 @@ bool TryParseSensorValue(const std::string& payload, double& out) {
   }
 }
 
+bool IsTelemetryTopic(const std::string& topic) {
+  return topic.find("/telemetry/") != std::string::npos;
+}
+
 void LogRuleAction(const std::shared_ptr<Logger>& logger,
                    const core::control::Action& action) {
   if (!logger) return;
@@ -259,7 +279,12 @@ int GatewayCore::Run(const GatewayArgs& args) {
     return 2;
   }
 
-  auto logger = BuildLogger(cfg, args);
+  auto database = std::make_shared<DatabaseService>(nullptr);
+  const std::string data_dir = cfg.GetStringOr("paths.data_dir", "data");
+  database->Open(cfg.GetStringOr("database.path", JoinPath(data_dir, "iotgw.db")));
+
+  auto logger = BuildLoggerWithDatabase(cfg, args, database);
+  database->SetLogger(logger);
   const std::string version =
       args.set_version.empty() ? std::string(IOTGW_VERSION) : args.set_version;
   logger->Info("Starting IoT Edge Gateway " + version);
@@ -306,12 +331,28 @@ int GatewayCore::Run(const GatewayArgs& args) {
   MqttClient mqtt(server.GetMgr(), logger);
 
   auto ingest = [&](const std::string& topic, const std::string& payload) {
+    if (!IsTelemetryTopic(topic)) {
+      logger->Info("MQTT non-telemetry ignored topic=" + topic +
+                   " payload=" + payload);
+      return;
+    }
+
     const int64_t now = core::common::time::NowUnixMs();
     std::string device_id;
     registry.UpsertMqttDeviceFromTopic(topic, payload, now, device_id);
+    if (!device_id.empty()) {
+      logger->Info("MQTT telemetry device=" + device_id + " topic=" + topic +
+                   " payload=" + payload);
+    } else {
+      logger->Warn("MQTT telemetry ignored topic=" + topic + " payload=" +
+                   payload);
+    }
 
     double sensor_value = 0.0;
     if (!device_id.empty() && TryParseSensorValue(payload, sensor_value)) {
+      if (database && database->IsOpen()) {
+        database->RecordSensorValue(device_id, topic, payload, sensor_value, now);
+      }
       rules.OnSensorValue(device_id, sensor_value,
                           [&](const core::control::Rule& rule,
                               const core::control::Action& action) {
@@ -319,10 +360,12 @@ int GatewayCore::Run(const GatewayArgs& args) {
                               std::string cmd_topic;
                               if (registry.GetCommandTopic(action.actuator_id,
                                                            cmd_topic)) {
+                                const std::string data_key =
+                                    action.actuator_id == "motor" ? "on" : "value";
                                 const std::string cmd = json::Object({
                                     {"device_id", json::Quote(action.actuator_id)},
                                     {"type", json::Quote("cmd")},
-                                    {"data", json::Object({{"value", action.value}})},
+                                    {"data", json::Object({{data_key, action.value}})},
                                     {"rule_id", json::Quote(rule.id)},
                                 });
                                 if (!mqtt.Publish(cmd_topic, cmd, 0, false)) {
@@ -361,7 +404,9 @@ int GatewayCore::Run(const GatewayArgs& args) {
         static_cast<uint16_t>(cfg.GetInt64Or("mqtt.keepalive_sec", 30));
     mqtt_options.clean_session = cfg.GetBoolOr("mqtt.clean_session", true);
     mqtt.Connect(mqtt_options);
-    mqtt.Subscribe(cfg.GetStringOr("mqtt.topic_prefix", "iotgw/dev/") + "#", 0);
+    mqtt.Subscribe(cfg.GetStringOr("mqtt.topic_prefix", "iotgw/dev/") +
+                       "telemetry/#",
+                   0);
   } else {
     logger->Info("MQTT disabled by config; WebSocket simulation remains available");
   }
@@ -372,6 +417,7 @@ int GatewayCore::Run(const GatewayArgs& args) {
   api_ctx.rules = &rules;
   api_ctx.mqtt = &mqtt;
   api_ctx.camera = &camera;
+  api_ctx.database = database.get();
   api_ctx.control_state = &control_state;
   api_ctx.version = version;
   api_ctx.ingest_telemetry = ingest;
@@ -411,6 +457,7 @@ int GatewayCore::Run(const GatewayArgs& args) {
   while (g_running) {
     server.Poll(50);
     const int64_t now = core::common::time::NowUnixMs();
+    mqtt.Poll(now);
     if (now - last_heartbeat >= 10000) {
       logger->Info("heartbeat devices=" + std::to_string(registry.List().size()) +
                    " rules=" + std::to_string(rules.Rules().size()));

@@ -1,5 +1,6 @@
 #include "core/protocol_adapters/mqtt_adapter/mqtt_adapter.hpp"
 
+#include "core/common/utils/time_utils.hpp"
 #include "mongoose.h"
 
 namespace iotgw {
@@ -23,6 +24,12 @@ bool MqttClient::Connect(const Options& opt) {
   if (mgr_ == nullptr) {
     return false;
   }
+  options_ = opt;
+  reconnect_enabled_ = true;
+  next_reconnect_ms_ = 0;
+  if (conn_ != nullptr || open_) {
+    return true;
+  }
   struct mg_mqtt_opts mqtt_opts = {};
   mqtt_opts.user = mg_str(opt.user.c_str());
   mqtt_opts.pass = mg_str(opt.pass.c_str());
@@ -41,14 +48,20 @@ bool MqttClient::Connect(const Options& opt) {
       this);
   if (conn_ == nullptr) {
     if (logger_) logger_->Warn("MQTT connect request failed");
+    next_reconnect_ms_ =
+        core::common::time::NowUnixMs() + static_cast<int64_t>(3000);
     return false;
   }
   return true;
 }
 
 bool MqttClient::Subscribe(const std::string& topic, uint8_t qos) {
+  subscriptions_.push_back({topic, qos});
   if (conn_ == nullptr) {
     return false;
+  }
+  if (!open_) {
+    return true;
   }
   struct mg_mqtt_opts opts = {};
   opts.topic = mg_str(topic.c_str());
@@ -80,10 +93,30 @@ void MqttClient::SetMessageHandler(MessageHandler handler) {
 
 bool MqttClient::IsOpen() const { return open_; }
 
+void MqttClient::Poll(int64_t now_ms) {
+  if (!reconnect_enabled_ || conn_ != nullptr || open_) {
+    return;
+  }
+  if (now_ms < next_reconnect_ms_) {
+    return;
+  }
+  next_reconnect_ms_ = now_ms + static_cast<int64_t>(3000);
+  if (logger_) logger_->Info("MQTT reconnecting");
+  const Options opt = options_;
+  Connect(opt);
+}
+
 void MqttClient::OnMongooseEvent(struct mg_connection* c, int ev, void* ev_data) {
   if (ev == MG_EV_MQTT_OPEN) {
     open_ = true;
     if (logger_) logger_->Info("MQTT connected");
+    for (const auto& sub : subscriptions_) {
+      struct mg_mqtt_opts opts = {};
+      opts.topic = mg_str(sub.first.c_str());
+      opts.qos = sub.second;
+      mg_mqtt_sub(conn_, &opts);
+      if (logger_) logger_->Info("MQTT subscribed " + sub.first);
+    }
   } else if (ev == MG_EV_MQTT_MSG) {
     auto* mm = static_cast<struct mg_mqtt_message*>(ev_data);
     if (handler_ && mm) {
@@ -93,6 +126,8 @@ void MqttClient::OnMongooseEvent(struct mg_connection* c, int ev, void* ev_data)
   } else if (ev == MG_EV_CLOSE && c == conn_) {
     open_ = false;
     conn_ = nullptr;
+    next_reconnect_ms_ =
+        core::common::time::NowUnixMs() + static_cast<int64_t>(3000);
     if (logger_) logger_->Warn("MQTT connection closed");
   }
 }

@@ -1,6 +1,6 @@
 automation_rules:
   - id: cooling_on
-    enabled: true
+    enabled: false
     when:
       sensor_id: temp
       op: ">"
@@ -11,7 +11,7 @@ automation_rules:
         value: 1
 
   - id: cooling_off
-    enabled: true
+    enabled: false
     when:
       sensor_id: temp
       op: "<"

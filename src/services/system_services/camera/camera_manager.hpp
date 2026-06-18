@@ -24,6 +24,7 @@ struct CameraResult {
   bool ok = false;
   std::string message;
   std::string url;
+  std::string file_path;
 };
 
 class CameraManager {

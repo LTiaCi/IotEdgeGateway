@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <functional>
 
 namespace iotgw {
 namespace core {
@@ -104,6 +105,24 @@ class MultiSink : public Sink {
 
  private:
   std::vector<std::shared_ptr<Sink>> sinks_;
+};
+
+class CallbackSink : public Sink {
+ public:
+  using Callback = std::function<void(Level, const std::string&)>;
+
+  explicit CallbackSink(Callback callback) : callback_(std::move(callback)) {}
+
+  void Write(Level level, const std::string& message) override {
+    if (callback_) {
+      callback_(level, message);
+    }
+  }
+
+  void Flush() override {}
+
+ private:
+  Callback callback_;
 };
 
 class Logger {

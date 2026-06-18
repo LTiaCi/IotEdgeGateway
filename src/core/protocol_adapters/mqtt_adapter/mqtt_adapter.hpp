@@ -6,6 +6,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 struct mg_mgr;
 struct mg_connection;
@@ -41,13 +43,18 @@ class MqttClient {
                bool retain = false);
   void SetMessageHandler(MessageHandler handler);
   bool IsOpen() const;
+  void Poll(int64_t now_ms);
   void OnMongooseEvent(struct mg_connection* c, int ev, void* ev_data);
 
  private:
   struct mg_mgr* mgr_ = nullptr;
   struct mg_connection* conn_ = nullptr;
   bool open_ = false;
+  bool reconnect_enabled_ = false;
+  int64_t next_reconnect_ms_ = 0;
   uint16_t next_id_ = 1;
+  Options options_;
+  std::vector<std::pair<std::string, uint8_t>> subscriptions_;
   MessageHandler handler_;
   std::shared_ptr<core::common::log::Logger> logger_;
 };

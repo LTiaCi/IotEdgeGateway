@@ -4,6 +4,7 @@
 #include "core/device/manager/device_manager.hpp"
 #include "core/protocol_adapters/mqtt_adapter/mqtt_adapter.hpp"
 #include "services/system_services/camera/camera_manager.hpp"
+#include "services/storage/database_service.hpp"
 
 #include <functional>
 #include <memory>
@@ -30,6 +31,7 @@ struct ApiContext {
   core::control::RuleEngine* rules = nullptr;
   core::protocol_adapters::mqtt_adapter::MqttClient* mqtt = nullptr;
   system_services::camera::CameraManager* camera = nullptr;
+  storage::DatabaseService* database = nullptr;
   ControlState* control_state = nullptr;
   std::function<bool()> reload_rules;
   std::function<void(const std::string& topic, const std::string& payload)>
@@ -60,6 +62,10 @@ ApiResponse HandleCameraApi(const std::string& method,
                             const std::string& path,
                             ApiContext& ctx);
 
+ApiResponse HandleDatabaseApi(const std::string& method,
+                              const std::string& path,
+                              ApiContext& ctx);
+
 inline ApiResponse DispatchApi(const std::string& method,
                                const std::string& path,
                                const std::string& body,
@@ -73,6 +79,10 @@ inline ApiResponse DispatchApi(const std::string& method,
     return response;
   }
   response = HandleCameraApi(method, path, ctx);
+  if (response.status != 404) {
+    return response;
+  }
+  response = HandleDatabaseApi(method, path, ctx);
   if (response.status != 404) {
     return response;
   }

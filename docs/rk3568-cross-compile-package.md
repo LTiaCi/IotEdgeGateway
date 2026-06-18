@@ -4,6 +4,8 @@
 
 项目里已经内置了 Mongoose 源码，所以 Linux 虚拟机里不需要再单独 make Mongoose。
 
+当前版本还会链接 SQLite3，用来保存传感器数据、照片/录像记录、控制命令和运行日志。板子上有 `sqlite3` 命令还不够，交叉编译 sysroot 里也要有 `sqlite3.h` 和 `libsqlite3.so`。
+
 ## 1. 整体流程
 
 ```text
@@ -74,6 +76,22 @@ set(CMAKE_C_COMPILER /home/ciyeer/source/rk356x_linux/buildroot/output/host/bin/
 set(CMAKE_CXX_COMPILER /home/ciyeer/source/rk356x_linux/buildroot/output/host/bin/aarch64-buildroot-linux-gnu-g++)
 set(CMAKE_SYSROOT /home/ciyeer/source/rk356x_linux/buildroot/output/host/aarch64-buildroot-linux-gnu/sysroot)
 ```
+
+再确认 SQLite3 开发文件存在：
+
+```bash
+find /home/ciyeer/source/rk356x_linux/buildroot/output/host/aarch64-buildroot-linux-gnu/sysroot -name "sqlite3.h"
+find /home/ciyeer/source/rk356x_linux/buildroot/output/host/aarch64-buildroot-linux-gnu/sysroot -name "libsqlite3.so*"
+```
+
+正常应该能看到：
+
+```text
+.../usr/include/sqlite3.h
+.../usr/lib/libsqlite3.so
+```
+
+如果这里查不到，CMake 会报 SQLite3 开发文件缺失，需要先在 Buildroot/sysroot 里补 SQLite3。
 
 ## 3. 把项目源码放到 Linux 虚拟机
 
@@ -242,6 +260,12 @@ dist/iotgw_package/
 │   ├── index.html
 │   └── js/hls.min.js
 └── start.sh
+```
+
+数据库文件不会在打包时生成，而是在板子第一次启动后自动生成：
+
+```text
+/opt/iotgw_package/data/iotgw.db
 ```
 
 确认一下：
@@ -482,9 +506,99 @@ hlsInstance = new Hls();
 
 如果后续必须接近 1 秒以内，就不建议继续硬压 HLS 参数了，可以再评估 WebRTC、RTSP 低延迟播放器，或者 MJPEG 预览流。
 
-## 13. 常见问题
+## 13. MQTT 单片机实时数据联调
 
-### 13.1 板子上网页打不开
+当前网关配置会连接 RK3568 本机 MQTT Broker：
+
+```yaml
+mqtt:
+  enabled: true
+  broker_host: "127.0.0.1"
+  broker_port: 1883
+  topic_prefix: "iotgw/dev/"
+```
+
+因此推荐数据链路是：
+
+```text
+单片机 publish -> RK3568 Mosquitto -> iotgw_gateway subscribe -> /api/status -> 前端显示
+```
+
+先在 RK3568 上确认 Mosquitto：
+
+```bash
+which mosquitto
+which mosquitto_pub
+which mosquitto_sub
+```
+
+启动 MQTT Broker：
+
+```bash
+mosquitto -p 1883 -d
+netstat -lntp 2>/dev/null | grep 1883
+```
+
+启动网关后端后，终端应看到：
+
+```text
+[INFO] MQTT connected
+[INFO] MQTT subscribed iotgw/dev/#
+```
+
+单片机发布传感器数据时，使用这些主题：
+
+```text
+iotgw/dev/telemetry/temp
+iotgw/dev/telemetry/humi
+iotgw/dev/telemetry/light
+iotgw/dev/telemetry/ir
+```
+
+Payload 使用 JSON，字段名固定为 `value`：
+
+```json
+{"value":25.6}
+```
+
+手动模拟测试：
+
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 -t iotgw/dev/telemetry/temp -m '{"value":26.5}'
+mosquitto_pub -h 127.0.0.1 -p 1883 -t iotgw/dev/telemetry/humi -m '{"value":58}'
+mosquitto_pub -h 127.0.0.1 -p 1883 -t iotgw/dev/telemetry/light -m '{"value":760}'
+mosquitto_pub -h 127.0.0.1 -p 1883 -t iotgw/dev/telemetry/ir -m '{"value":1}'
+```
+
+前端网页会通过 `/api/status` 刷新数据。也可以直接在浏览器打开：
+
+```text
+http://RK3568_IP:8080/api/status
+```
+
+单片机 MQTT 客户端建议配置：
+
+```text
+Broker Host: RK3568_IP
+Broker Port: 1883
+Client ID: mcu_sensor_001
+Username: 空
+Password: 空
+QoS: 0
+Retain: false
+```
+
+如果网页不更新，先在 RK3568 上监听：
+
+```bash
+mosquitto_sub -h 127.0.0.1 -p 1883 -t 'iotgw/dev/#' -v
+```
+
+能看到单片机发来的数据，说明 MQTT 到板子没问题；再检查 `iotgw_gateway` 是否显示 `MQTT connected`。
+
+## 14. 常见问题
+
+### 14.1 板子上网页打不开
 
 在板子上检查 8080 是否监听：
 
@@ -508,7 +622,7 @@ http://板子IP:8080/
 
 不是 `127.0.0.1`。
 
-### 13.2 启动时报 MQTT 错误
+### 14.2 启动时报 MQTT 错误
 
 如果你暂时不用 MQTT，可以先忽略。网页和视频服务仍然能启动。
 
@@ -534,7 +648,7 @@ mqtt:
 
 然后重新打包或直接修改板子上 `/opt/iotgw_package/config/environments/rk3568.yaml`。
 
-### 13.3 点击开启视频失败
+### 14.3 点击开启视频失败
 
 按顺序检查：
 
@@ -549,7 +663,7 @@ ls -ld /mnt/www/stream /userdata/www
 
 再看程序终端日志里有没有 GStreamer pipeline 的报错。
 
-### 13.4 编译时报找不到 gstreamer-1.0
+### 14.4 编译时报找不到 gstreamer-1.0
 
 当前项目已经改成运行时调用 `gst-launch-1.0`，正常不会再因为缺少 `gstreamer-1.0.pc` 导致 CMake 失败。
 
@@ -577,7 +691,7 @@ cmake -S . -B build-rk3568 \
 cmake --build build-rk3568 -j"$(nproc)"
 ```
 
-## 14. 每次修改代码后的固定操作
+## 15. 每次修改代码后的固定操作
 
 以后你每次改完项目，基本就按这几步走。这个流程会同时更新后端程序、`www/index.html` 前端页面、配置文件。
 
@@ -639,6 +753,19 @@ PC 浏览器打开：
 
 ```text
 http://192.168.31.238:8080/
+```
+
+启动后可以确认 SQLite 数据库：
+
+```bash
+ls -lh /opt/iotgw_package/data/iotgw.db*
+sqlite3 /opt/iotgw_package/data/iotgw.db ".tables"
+```
+
+详细数据库查看方法见：
+
+```text
+docs/sqlite-database-usage.md
 ```
 
 如果浏览器之前已经打开过页面，按 `Ctrl + F5` 强制刷新，避免浏览器还用旧的 `index.html` 缓存。

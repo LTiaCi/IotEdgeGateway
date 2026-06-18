@@ -72,8 +72,25 @@ std::string DashboardStatusWithControl(ApiContext& ctx) {
 std::string NormalizeActuatorPayload(const std::string& id,
                                      const std::string& body) {
   namespace json = iotgw::core::common::json;
-  if (id != "buzzer") {
-    return body;
+  if (id == "led") {
+    const std::string on = ExtractControlPayloadValue(body, "on", "0");
+    const std::string br = ExtractControlPayloadValue(body, "br", "50");
+    return json::Object({
+        {"device_id", json::Quote("led")},
+        {"type", json::Quote("cmd")},
+        {"data", json::Object({{"on", on}, {"br", br}})},
+    });
+  }
+
+  if (id == "motor") {
+    const std::string on = ExtractControlPayloadValue(body, "on", "0");
+    const std::string sp = ExtractControlPayloadValue(body, "sp", "30");
+    const std::string dir = ExtractControlPayloadValue(body, "dir", "0");
+    return json::Object({
+        {"device_id", json::Quote("motor")},
+        {"type", json::Quote("cmd")},
+        {"data", json::Object({{"on", on}, {"sp", sp}, {"dir", dir}})},
+    });
   }
 
   bool on = false;
@@ -84,9 +101,27 @@ std::string NormalizeActuatorPayload(const std::string& id,
   return json::Object({
       {"device_id", json::Quote("buzzer")},
       {"type", json::Quote("cmd")},
-      {"data", json::Object({{"on", json::Bool(on)}})},
-      {"ts", json::Number(iotgw::core::common::time::NowUnixMs() / 1000)},
+      {"data", json::Object({{"on", on ? "1" : "0"}})},
   });
+}
+
+void UpdateActuatorControlState(const std::string& id,
+                                const std::string& body,
+                                ControlState* state) {
+  if (!state) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(state->mu);
+  if (id == "led") {
+    state->led_on = ExtractControlInt(body, "on", state->led_on);
+    state->led_br = ExtractControlInt(body, "br", state->led_br);
+  } else if (id == "motor") {
+    state->motor_on = ExtractControlInt(body, "on", state->motor_on);
+    state->motor_sp = ExtractControlInt(body, "sp", state->motor_sp);
+    state->motor_dir = ExtractControlInt(body, "dir", state->motor_dir);
+  } else if (id == "buzzer") {
+    state->buzzer = ExtractControlInt(body, "on", state->buzzer);
+  }
 }
 
 }  // namespace
@@ -191,11 +226,17 @@ ApiResponse HandleDeviceApi(const std::string& method,
                             {"error", json::Quote("actuator_not_found")}})};
     }
     const std::string payload = NormalizeActuatorPayload(id, body);
-    if (!ctx.mqtt || !ctx.mqtt->Publish(topic, payload, 0, false)) {
+    const bool published = ctx.mqtt && ctx.mqtt->Publish(topic, payload, 0, false);
+    if (ctx.database) {
+      ctx.database->RecordCommand(id, topic, payload, published,
+                                  core::common::time::NowUnixMs());
+    }
+    if (!published) {
       return {503, "application/json",
               json::Object({{"ok", "false"},
                             {"error", json::Quote("mqtt_not_connected")}})};
     }
+    UpdateActuatorControlState(id, body, ctx.control_state);
     return {200, "application/json", json::Object({{"ok", "true"}})};
   }
 

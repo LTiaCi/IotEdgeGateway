@@ -1,6 +1,7 @@
 #include "services/web_services/api/rest_api.hpp"
 
 #include "core/common/utils/json_utils.hpp"
+#include "core/common/utils/time_utils.hpp"
 
 namespace iotgw {
 namespace services {
@@ -16,7 +17,8 @@ ApiResponse ResultToResponse(
   return {result.ok ? ok_status : 400, "application/json",
           json::Object({{"ok", json::Bool(result.ok)},
                         {"message", json::Quote(result.message)},
-                        {"url", json::Quote(result.url)}})};
+                        {"url", json::Quote(result.url)},
+                        {"file_path", json::Quote(result.file_path)}})};
 }
 
 }  // namespace
@@ -37,13 +39,31 @@ ApiResponse HandleCameraApi(const std::string& method,
     return ResultToResponse(ctx.camera->StopStream());
   }
   if (method == "POST" && path == "/api/camera/snapshot") {
-    return ResultToResponse(ctx.camera->Snapshot());
+    const auto result = ctx.camera->Snapshot();
+    if (ctx.database && result.ok) {
+      ctx.database->RecordMedia("snapshot", result.url, result.file_path,
+                                result.message,
+                                core::common::time::NowUnixMs());
+    }
+    return ResultToResponse(result);
   }
   if (method == "POST" && path == "/api/camera/start_record") {
-    return ResultToResponse(ctx.camera->StartRecord());
+    const auto result = ctx.camera->StartRecord();
+    if (ctx.database && result.ok) {
+      ctx.database->RecordMedia("record_start", result.url, result.file_path,
+                                result.message,
+                                core::common::time::NowUnixMs());
+    }
+    return ResultToResponse(result);
   }
   if (method == "POST" && path == "/api/camera/stop_record") {
-    return ResultToResponse(ctx.camera->StopRecord());
+    const auto result = ctx.camera->StopRecord();
+    if (ctx.database && result.ok) {
+      ctx.database->RecordMedia("record", result.url, result.file_path,
+                                result.message,
+                                core::common::time::NowUnixMs());
+    }
+    return ResultToResponse(result);
   }
   return {};
 }
