@@ -3,6 +3,7 @@
 #include "core/common/utils/json_utils.hpp"
 
 #include <cstdlib>
+#include <cstdint>
 
 namespace iotgw {
 namespace services {
@@ -40,6 +41,24 @@ ApiResponse HandleDatabaseApi(const std::string& method,
   }
   if (method != "GET") {
     return {};
+  }
+  if (PathBaseEquals(path, "/api/db/media_content")) {
+    const std::string key = "id=";
+    const std::size_t pos = path.find(key);
+    if (pos == std::string::npos) {
+      return {400, "application/json",
+              json::Object({{"ok", "false"},
+                            {"error", json::Quote("missing_id")}})};
+    }
+    const int64_t id = std::atoll(path.substr(pos + key.size()).c_str());
+    std::string mime_type;
+    std::string data;
+    if (!ctx.database->GetMediaContent(id, mime_type, data)) {
+      return {404, "application/json",
+              json::Object({{"ok", "false"},
+                            {"error", json::Quote("media_content_not_found")}})};
+    }
+    return {200, mime_type, data};
   }
   if (path == "/api/db/summary") {
     return {200, "application/json", ctx.database->SummaryJson()};

@@ -189,7 +189,13 @@ ApiResponse HandleDeviceApi(const std::string& method,
             {"type", json::Quote("cmd")},
             {"data", command.second},
         });
-        if (ctx.mqtt && ctx.mqtt->Publish(topic, payload, 0, false)) {
+        const bool published =
+            ctx.mqtt && ctx.mqtt->Publish(topic, payload, 0, false);
+        if (ctx.database) {
+          ctx.database->RecordCommand(command.first, topic, payload, published,
+                                      core::common::time::NowUnixMs());
+        }
+        if (published) {
           any_published = true;
         }
       }

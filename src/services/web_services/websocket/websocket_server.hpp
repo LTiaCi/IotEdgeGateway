@@ -88,14 +88,19 @@ class MongooseServer {
       int status = 404;
       if (http_handler_ &&
           http_handler_(method, uri, body, content_type, status, response)) {
-        mg_http_reply(c, status,
-                      ("Content-Type: " + content_type +
-                       "\r\nAccess-Control-Allow-Origin: *"
-                       "\r\nCache-Control: no-store, no-cache, must-revalidate"
-                       "\r\nPragma: no-cache"
-                       "\r\nExpires: 0\r\n")
-                          .c_str(),
-                      "%s", response.c_str());
+        const std::string headers =
+            "Content-Type: " + content_type +
+            "\r\nAccess-Control-Allow-Origin: *"
+            "\r\nCache-Control: no-store, no-cache, must-revalidate"
+            "\r\nPragma: no-cache"
+            "\r\nExpires: 0\r\n";
+        if (content_type == "image/jpeg" || content_type == "video/mp4" ||
+            content_type == "application/octet-stream") {
+          mg_http_reply(c, status, headers.c_str(), "%.*s",
+                        static_cast<int>(response.size()), response.data());
+        } else {
+          mg_http_reply(c, status, headers.c_str(), "%s", response.c_str());
+        }
         return;
       }
 

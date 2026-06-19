@@ -320,12 +320,89 @@ sync
 
 这种方式也可以，不需要传整个项目源码，只传 `iotgw_package`。
 
-## 8. 在 RK3568 板子上启动
+## 8. 在 RK3568 板子上启动 MQTT
 
 登录 RK3568：
 
 ```bash
 ssh root@192.168.31.238
+```
+
+先确认板子上有 Mosquitto：
+
+```bash
+which mosquitto
+which mosquitto_pub
+which mosquitto_sub
+```
+
+如果能看到路径，说明 MQTT Broker 和测试工具都在。
+
+先停掉可能残留的旧 Mosquitto，再启动新的 Mosquitto。推荐用下面这个配置，允许单片机和 PC 从局域网连接到板子的 `1883` 端口：
+
+```bash
+killall mosquitto 2>/dev/null || true
+
+cat > /tmp/mosquitto-iotgw.conf <<'EOF'
+listener 1883 0.0.0.0
+allow_anonymous true
+EOF
+
+mosquitto -c /tmp/mosquitto-iotgw.conf -d
+```
+
+确认 `1883` 已经监听：
+
+```bash
+netstat -lntp 2>/dev/null | grep 1883
+killall iotgw_gateway 2>/dev/null
+
+```
+
+正常应该看到类似：
+
+```text
+tcp        0      0 0.0.0.0:1883        0.0.0.0:*        LISTEN
+```
+
+如果你想看 MQTT 详细连接日志，不要用 `-d` 后台运行，改成前台运行：
+
+```bash
+killall mosquitto 2>/dev/null || true
+
+mosquitto -c /tmp/mosquitto-iotgw.conf -v
+```
+
+这个终端不要关，另开一个 SSH 终端启动网关。
+
+可以先手动测试一下 MQTT：
+
+一个终端监听：
+
+```bash
+mosquitto_sub -h 127.0.0.1 -p 1883 -t 'iotgw/dev/#' -v
+```
+
+另一个终端发布：
+
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 -t iotgw/dev/telemetry/temp -m '{"value":26.5}'
+```
+
+如果监听终端看到：
+
+```text
+iotgw/dev/telemetry/temp {"value":26.5}
+```
+
+说明 MQTT 正常。
+
+## 9. 在 RK3568 板子上启动网关
+
+先停掉可能残留的旧网关进程：
+
+```bash
+killall iotgw_gateway 2>/dev/null || true
 ```
 
 进入运行目录：
@@ -352,24 +429,45 @@ chmod +x bin/iotgw_gateway
 ```text
 [INFO] Starting IoT Edge Gateway 1.0.0
 [INFO] Web server listening at http://0.0.0.0:8080
+[INFO] MQTT connected
 ```
 
-如果你暂时没有启动 MQTT，看到类似下面的 MQTT 连接失败可以先不用管：
+如果看到类似下面的 MQTT 连接失败，说明 Mosquitto 没启动，或者 `1883` 没监听：
 
 ```text
 MQTT connection closed
 socket error
 ```
 
-只要看到：
+这时先回到第 8 步启动 Mosquitto，再重启网关。
 
-```text
-Web server listening at http://0.0.0.0:8080
+最稳的恢复顺序是：
+
+```bash
+killall mosquitto 2>/dev/null || true
+killall iotgw_gateway 2>/dev/null || true
+
+cat > /tmp/mosquitto-iotgw.conf <<'EOF'
+listener 1883 0.0.0.0
+allow_anonymous true
+EOF
+
+mosquitto -c /tmp/mosquitto-iotgw.conf -d
+netstat -lntp 2>/dev/null | grep 1883
+
+cd /opt/iotgw_package
+./start.sh
 ```
 
-网页服务就已经起来了。
+如果 `netstat` 没有任何输出，就不要启动网关，先把 Mosquitto 启动问题解决。网关日志里出现 `mqtt://127.0.0.1:1883 socket error`，本质就是网关连不上板子本机的 Mosquitto。
 
-## 9. PC 浏览器打开网页
+如果只是看网页和视频，暂时可以不管 MQTT；但如果要联调单片机实时数据和外设控制，必须看到：
+
+```text
+MQTT connected
+```
+
+## 10. PC 浏览器打开网页
 
 在你的电脑浏览器里打开：
 
@@ -391,7 +489,7 @@ http://127.0.0.1:8080/
 
 `127.0.0.1` 代表当前电脑自己，不代表 RK3568 板子。
 
-## 10. 视频功能上板前检查
+## 11. 视频功能上板前检查
 
 如果你编译的是 GStreamer 版，板子上还要确认运行环境有这些东西。
 
@@ -457,7 +555,7 @@ gst-inspect-1.0 hlssink
 
 如果某个命令报找不到，说明板子运行环境缺对应插件。程序可能能启动，但点击“开启视频”会失败。
 
-## 11. 视频功能保存位置
+## 12. 视频功能保存位置
 
 网页按钮对应关系如下：
 
@@ -485,7 +583,7 @@ http://RK3568_IP:8080/media/snapshot_YYYYMMDD_HHMMSS_N.jpg
 http://RK3568_IP:8080/media/record_YYYYMMDD_HHMMSS_N.mp4
 ```
 
-## 12. 低延迟视频参数
+## 13. 低延迟视频参数
 
 当前项目使用 HLS 播放视频。HLS 比 WebRTC 稳定、部署简单，但天然会有切片缓冲延迟。
 
@@ -506,7 +604,7 @@ hlsInstance = new Hls();
 
 如果后续必须接近 1 秒以内，就不建议继续硬压 HLS 参数了，可以再评估 WebRTC、RTSP 低延迟播放器，或者 MJPEG 预览流。
 
-## 13. MQTT 单片机实时数据联调
+## 14. MQTT 单片机实时数据联调
 
 当前网关配置会连接 RK3568 本机 MQTT Broker：
 
@@ -596,9 +694,9 @@ mosquitto_sub -h 127.0.0.1 -p 1883 -t 'iotgw/dev/#' -v
 
 能看到单片机发来的数据，说明 MQTT 到板子没问题；再检查 `iotgw_gateway` 是否显示 `MQTT connected`。
 
-## 14. 常见问题
+## 15. 常见问题
 
-### 14.1 板子上网页打不开
+### 15.1 板子上网页打不开
 
 在板子上检查 8080 是否监听：
 
@@ -622,7 +720,7 @@ http://板子IP:8080/
 
 不是 `127.0.0.1`。
 
-### 14.2 启动时报 MQTT 错误
+### 15.2 启动时报 MQTT 错误
 
 如果你暂时不用 MQTT，可以先忽略。网页和视频服务仍然能启动。
 
@@ -648,7 +746,7 @@ mqtt:
 
 然后重新打包或直接修改板子上 `/opt/iotgw_package/config/environments/rk3568.yaml`。
 
-### 14.3 点击开启视频失败
+### 15.3 点击开启视频失败
 
 按顺序检查：
 
@@ -663,7 +761,7 @@ ls -ld /mnt/www/stream /userdata/www
 
 再看程序终端日志里有没有 GStreamer pipeline 的报错。
 
-### 14.4 编译时报找不到 gstreamer-1.0
+### 15.4 编译时报找不到 gstreamer-1.0
 
 当前项目已经改成运行时调用 `gst-launch-1.0`，正常不会再因为缺少 `gstreamer-1.0.pc` 导致 CMake 失败。
 
@@ -691,7 +789,7 @@ cmake -S . -B build-rk3568 \
 cmake --build build-rk3568 -j"$(nproc)"
 ```
 
-## 15. 每次修改代码后的固定操作
+## 16. 每次修改代码后的固定操作
 
 以后你每次改完项目，基本就按这几步走。这个流程会同时更新后端程序、`www/index.html` 前端页面、配置文件。
 

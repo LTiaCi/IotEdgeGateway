@@ -41,9 +41,9 @@ ApiResponse HandleCameraApi(const std::string& method,
   if (method == "POST" && path == "/api/camera/snapshot") {
     const auto result = ctx.camera->Snapshot();
     if (ctx.database && result.ok) {
-      ctx.database->RecordMedia("snapshot", result.url, result.file_path,
-                                result.message,
-                                core::common::time::NowUnixMs());
+      ctx.database->RecordMediaFile("snapshot", result.url, result.file_path,
+                                    result.message,
+                                    core::common::time::NowUnixMs());
     }
     return ResultToResponse(result);
   }
@@ -59,9 +59,9 @@ ApiResponse HandleCameraApi(const std::string& method,
   if (method == "POST" && path == "/api/camera/stop_record") {
     const auto result = ctx.camera->StopRecord();
     if (ctx.database && result.ok) {
-      ctx.database->RecordMedia("record", result.url, result.file_path,
-                                result.message,
-                                core::common::time::NowUnixMs());
+      ctx.database->RecordMediaFile("record", result.url, result.file_path,
+                                    result.message,
+                                    core::common::time::NowUnixMs());
     }
     return ResultToResponse(result);
   }

@@ -48,6 +48,27 @@
             font-size: 13px;
         }
 
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-btn {
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: rgba(255, 255, 255, 0.18);
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .header-btn:active {
+            transform: scale(0.97);
+        }
+
         /* 主区域布局 */
         .main-grid {
             display: grid;
@@ -160,6 +181,34 @@
             border-radius: 12px;
             margin-bottom: 12px;
             border: 1px solid #edf2f7;
+        }
+
+        .protocol-switch {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 14px;
+            background: #f8fafc;
+            border: 1px solid #edf2f7;
+            border-radius: 12px;
+            padding: 8px;
+        }
+
+        .protocol-btn {
+            border: 1px solid transparent;
+            background: #e2e8f0;
+            color: #475569;
+            border-radius: 8px;
+            padding: 9px 8px;
+            font-size: 13px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .protocol-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
         }
 
         .label-row {
@@ -297,9 +346,44 @@
             color: #94a3b8;
         }
 
+        .db-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            z-index: 50;
+        }
+
+        .db-modal.open {
+            display: flex;
+        }
+
         .db-panel {
-            margin-top: 20px;
-            min-height: 220px;
+            width: min(1280px, 100%);
+            max-height: calc(100vh - 48px);
+            min-height: 520px;
+        }
+
+        .db-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .db-close {
+            border: none;
+            background: #e2e8f0;
+            color: #334155;
+            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            font-size: 20px;
+            cursor: pointer;
         }
 
         .db-toolbar {
@@ -349,7 +433,8 @@
             border: 1px solid #edf2f7;
             border-radius: 10px;
             overflow: auto;
-            max-height: 260px;
+            flex: 1;
+            min-height: 0;
             background: #fff;
         }
 
@@ -383,6 +468,13 @@
             word-break: break-all;
         }
 
+        .db-link {
+            color: var(--primary);
+            font-weight: 700;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+
         @media (max-width: 1050px) {
             body {
                 height: auto;
@@ -410,6 +502,14 @@
                 grid-template-columns: 1fr;
                 gap: 4px;
             }
+
+            .db-modal {
+                padding: 10px;
+            }
+
+            .db-panel {
+                max-height: calc(100vh - 20px);
+            }
         }
     </style>
 </head>
@@ -418,7 +518,10 @@
 
     <div class="header">
         <div style="font-size: 20px; font-weight: 800; letter-spacing: 1px;">RK3568 智能网关控制系统</div>
-        <div class="status-tag" id="conn_status">● 设备在线</div>
+        <div class="header-actions">
+            <button class="header-btn" id="dbOpenBtn">数据库</button>
+            <div class="status-tag" id="conn_status">● 设备在线</div>
+        </div>
     </div>
 
     <div class="main-grid">
@@ -461,28 +564,6 @@
                 </div>
             </div>
 
-            <div class="card db-panel">
-                <div class="card-title">🗄️ 数据库记录</div>
-                <div class="db-toolbar">
-                    <button class="db-tab active" data-db-tab="sensors">传感器</button>
-                    <button class="db-tab" data-db-tab="media">照片/视频</button>
-                    <button class="db-tab" data-db-tab="commands">控制命令</button>
-                    <button class="db-tab" data-db-tab="logs">运行日志</button>
-                </div>
-                <div class="db-summary" id="db_summary">
-                    <div class="db-summary-item">传感器: --</div>
-                    <div class="db-summary-item">媒体: --</div>
-                    <div class="db-summary-item">命令: --</div>
-                    <div class="db-summary-item">日志: --</div>
-                </div>
-                <div class="db-list" id="db_list">
-                    <div class="db-row">
-                        <div class="db-time">--</div>
-                        <div class="db-kind">等待数据</div>
-                        <div class="db-detail">数据库打开后会显示最近记录</div>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- 右侧 -->
@@ -490,6 +571,11 @@
             <!-- 控制卡片 -->
             <div class="card">
                 <div class="card-title">⚙️ 硬件外设控制</div>
+
+                <div class="protocol-switch" aria-label="通讯方式切换">
+                    <button class="protocol-btn active" id="protocolMqttBtn" type="button">MQTT</button>
+                    <button class="protocol-btn" id="protocolZigbeeBtn" type="button">ZigBee</button>
+                </div>
 
                 <div class="control-item">
                     <div class="label-row"><span>LED 照明灯</span><label class="switch"><input type="checkbox" id="led_sw"
@@ -528,6 +614,34 @@
         </div>
     </div>
 
+    <div class="db-modal" id="dbModal">
+        <div class="card db-panel">
+            <div class="db-title-row">
+                <div class="card-title" style="margin-bottom:0;">🗄️ 数据库记录</div>
+                <button class="db-close" id="dbCloseBtn">×</button>
+            </div>
+            <div class="db-toolbar">
+                <button class="db-tab active" data-db-tab="sensors">传感器</button>
+                <button class="db-tab" data-db-tab="media">照片/视频</button>
+                <button class="db-tab" data-db-tab="commands">控制命令</button>
+                <button class="db-tab" data-db-tab="logs">运行日志</button>
+            </div>
+            <div class="db-summary" id="db_summary">
+                <div class="db-summary-item">传感器: --</div>
+                <div class="db-summary-item">媒体: --</div>
+                <div class="db-summary-item">命令: --</div>
+                <div class="db-summary-item">日志: --</div>
+            </div>
+            <div class="db-list" id="db_list">
+                <div class="db-row">
+                    <div class="db-time">--</div>
+                    <div class="db-kind">等待数据</div>
+                    <div class="db-detail">点击右上角数据库按钮后显示最近记录</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 引入HLS.js -->
     <script src="/js/hls.min.js"></script>
 
@@ -551,10 +665,16 @@
         const streamStopBtn = document.getElementById('streamStopBtn');
         const snapshotBtn = document.getElementById('snapshotBtn');
         const recordBtn = document.getElementById('recordBtn');
+        const dbModal = document.getElementById('dbModal');
+        const dbOpenBtn = document.getElementById('dbOpenBtn');
+        const dbCloseBtn = document.getElementById('dbCloseBtn');
+        const protocolMqttBtn = document.getElementById('protocolMqttBtn');
+        const protocolZigbeeBtn = document.getElementById('protocolZigbeeBtn');
 
         let currentDir = 0;
         let activeDbTab = 'sensors';
         let dbPolling = false;
+        let activeProtocol = 'mqtt';
 
         // 写入日志函数（增强，兼容视频流日志）
         function addLog(msg) {
@@ -604,6 +724,14 @@
             </div>`;
         }
 
+        function dbRowHtml(time, kind, detailHtml) {
+            return `<div class="db-row">
+                <div class="db-time">${escapeHtml(time)}</div>
+                <div class="db-kind">${escapeHtml(kind)}</div>
+                <div class="db-detail">${detailHtml}</div>
+            </div>`;
+        }
+
         function renderDbRows(tab, rows) {
             const list = document.getElementById('db_list');
             if (!rows || rows.length === 0) {
@@ -616,18 +744,27 @@
                         `value=${row.value}, topic=${row.topic}, payload=${row.payload}`);
                 }
                 if (tab === 'media') {
-                    return dbRow(formatDbTime(row.ts_ms), row.media_type,
-                        `${row.url || ''} ${row.file_path || ''} ${row.message || ''}`);
+                    const dbUrl = row.in_db ? `/api/db/media_content?id=${row.id}` : '';
+                    const dbLink = dbUrl
+                        ? `<a class="db-link" href="${dbUrl}" target="_blank">数据库打开</a>`
+                        : '';
+                    const fileLink = row.url
+                        ? `<a class="db-link" href="${escapeHtml(row.url)}" target="_blank">文件打开</a>`
+                        : '';
+                    return dbRowHtml(formatDbTime(row.ts_ms), row.media_type,
+                        `${dbLink}${fileLink}${escapeHtml(`size=${row.content_size || 0}, ${row.file_path || ''} ${row.message || ''}`)}`);
                 }
                 if (tab === 'commands') {
+                    const okText = Number(row.ok || 0) ? '已发布' : '未发布';
                     return dbRow(formatDbTime(row.ts_ms), row.device_id,
-                        `ok=${row.ok}, topic=${row.topic}, payload=${row.payload}`);
+                        `${okText}, topic=${row.topic || '--'}, payload=${row.payload || '--'}`);
                 }
                 return dbRow(formatDbTime(row.ts_ms), row.level, row.message);
             }).join('');
         }
 
         async function refreshDatabasePanel() {
+            if (!dbModal.classList.contains('open')) return;
             if (dbPolling) return;
             dbPolling = true;
             try {
@@ -649,6 +786,15 @@
             } finally {
                 dbPolling = false;
             }
+        }
+
+        function openDatabaseView() {
+            dbModal.classList.add('open');
+            refreshDatabasePanel();
+        }
+
+        function closeDatabaseView() {
+            dbModal.classList.remove('open');
         }
 
         function wait(ms) {
@@ -792,9 +938,21 @@
         let ledUpdateTimer = null;
         let motorUpdateTimer = null;
 
+        function setActiveProtocol(protocol) {
+            activeProtocol = protocol;
+            protocolMqttBtn.classList.toggle('active', protocol === 'mqtt');
+            protocolZigbeeBtn.classList.toggle('active', protocol === 'zigbee');
+            addLog(`通讯方式切换: ${protocol === 'mqtt' ? 'MQTT' : 'ZigBee'}`);
+        }
+
         async function sendActuatorCommand(id, payload, label) {
             controlBusyUntil = Date.now() + 1500;
-            addLog(`${label}: ${JSON.stringify(payload)}`);
+            const protocolLabel = activeProtocol === 'mqtt' ? 'MQTT' : 'ZigBee';
+            addLog(`${label} [${protocolLabel}]: ${JSON.stringify(payload)}`);
+            if (activeProtocol === 'zigbee') {
+                addLog(`ZigBee 通讯接口待接入，当前未下发 ${label}`);
+                return;
+            }
             try {
                 const res = await fetch(`/api/actuators/${id}/set`, {
                     method: 'POST',
@@ -888,6 +1046,15 @@ function setMotorDirUser(dir) {
         streamStopBtn.onclick = stopStream;
         snapshotBtn.onclick = takeSnapshot;
         recordBtn.onclick = toggleRecord;
+        dbOpenBtn.onclick = openDatabaseView;
+        dbCloseBtn.onclick = closeDatabaseView;
+        protocolMqttBtn.onclick = () => setActiveProtocol('mqtt');
+        protocolZigbeeBtn.onclick = () => setActiveProtocol('zigbee');
+        dbModal.onclick = event => {
+            if (event.target === dbModal) {
+                closeDatabaseView();
+            }
+        };
 
         document.querySelectorAll('.db-tab').forEach(btn => {
             btn.onclick = () => {
@@ -946,7 +1113,6 @@ function setMotorDirUser(dir) {
 
         refreshStatus();
         setInterval(refreshStatus, 1000);
-        refreshDatabasePanel();
         setInterval(refreshDatabasePanel, 3000);
 
         // 初始化日志

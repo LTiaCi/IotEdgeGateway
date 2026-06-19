@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <fstream>
 #include <sstream>
 #include <sys/stat.h>
 #include <utility>
@@ -53,6 +54,33 @@ void EnsureParentDirs(const std::string& file_path) {
 
 void BindText(sqlite3_stmt* stmt, int index, const std::string& value) {
   sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT);
+}
+
+std::string MimeTypeForPath(const std::string& file_path) {
+  if (file_path.size() >= 4 &&
+      file_path.compare(file_path.size() - 4, 4, ".jpg") == 0) {
+    return "image/jpeg";
+  }
+  if (file_path.size() >= 5 &&
+      file_path.compare(file_path.size() - 5, 5, ".jpeg") == 0) {
+    return "image/jpeg";
+  }
+  if (file_path.size() >= 4 &&
+      file_path.compare(file_path.size() - 4, 4, ".mp4") == 0) {
+    return "video/mp4";
+  }
+  return "application/octet-stream";
+}
+
+bool ReadFileBytes(const std::string& file_path, std::string& data) {
+  std::ifstream in(file_path.c_str(), std::ios::binary);
+  if (!in.is_open()) {
+    return false;
+  }
+  std::ostringstream out;
+  out << in.rdbuf();
+  data = out.str();
+  return true;
 }
 
 int ClampLimit(int limit) {
@@ -162,8 +190,31 @@ bool DatabaseService::Exec(const std::string& sql) {
   return true;
 }
 
+bool DatabaseService::ColumnExists(const std::string& table,
+                                   const std::string& column) {
+  if (!db_) {
+    return false;
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const std::string sql = "PRAGMA table_info(" + table + ");";
+  if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  bool found = false;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const unsigned char* name = sqlite3_column_text(stmt, 1);
+    if (name && column == reinterpret_cast<const char*>(name)) {
+      found = true;
+      break;
+    }
+  }
+  sqlite3_finalize(stmt);
+  return found;
+}
+
 bool DatabaseService::PrepareSchema() {
-  return Exec(
+  const bool ok =
+      Exec(
              "CREATE TABLE IF NOT EXISTS sensor_samples ("
              "id INTEGER PRIMARY KEY AUTOINCREMENT,"
              "ts_ms INTEGER NOT NULL,"
@@ -181,7 +232,10 @@ bool DatabaseService::PrepareSchema() {
              "media_type TEXT NOT NULL,"
              "url TEXT,"
              "file_path TEXT,"
-             "message TEXT"
+             "message TEXT,"
+             "mime_type TEXT,"
+             "content_size INTEGER DEFAULT 0,"
+             "content BLOB"
              ");") &&
          Exec("CREATE INDEX IF NOT EXISTS idx_media_ts ON media_files(ts_ms);") &&
          Exec(
@@ -202,6 +256,22 @@ bool DatabaseService::PrepareSchema() {
              "message TEXT NOT NULL"
              ");") &&
          Exec("CREATE INDEX IF NOT EXISTS idx_logs_ts ON runtime_logs(ts_ms);");
+  if (!ok) {
+    return false;
+  }
+  if (!ColumnExists("media_files", "mime_type") &&
+      !Exec("ALTER TABLE media_files ADD COLUMN mime_type TEXT;")) {
+    return false;
+  }
+  if (!ColumnExists("media_files", "content_size") &&
+      !Exec("ALTER TABLE media_files ADD COLUMN content_size INTEGER DEFAULT 0;")) {
+    return false;
+  }
+  if (!ColumnExists("media_files", "content") &&
+      !Exec("ALTER TABLE media_files ADD COLUMN content BLOB;")) {
+    return false;
+  }
+  return true;
 }
 
 void DatabaseService::RecordSensorValue(const std::string& device_id,
@@ -234,14 +304,48 @@ void DatabaseService::RecordMedia(const std::string& media_type,
   if (!db_) return;
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO media_files(ts_ms,media_type,url,file_path,message) "
-      "VALUES(?,?,?,?,?);";
+      "INSERT INTO media_files(ts_ms,media_type,url,file_path,message,mime_type,"
+      "content_size,content) VALUES(?,?,?,?,?,?,?,NULL);";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
   sqlite3_bind_int64(stmt, 1, ts_ms);
   BindText(stmt, 2, media_type);
   BindText(stmt, 3, url);
   BindText(stmt, 4, file_path);
   BindText(stmt, 5, message);
+  BindText(stmt, 6, MimeTypeForPath(file_path));
+  sqlite3_bind_int64(stmt, 7, 0);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
+void DatabaseService::RecordMediaFile(const std::string& media_type,
+                                      const std::string& url,
+                                      const std::string& file_path,
+                                      const std::string& message,
+                                      int64_t ts_ms) {
+  std::string content;
+  const bool has_content = ReadFileBytes(file_path, content);
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!db_) return;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO media_files(ts_ms,media_type,url,file_path,message,mime_type,"
+      "content_size,content) VALUES(?,?,?,?,?,?,?,?);";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
+  sqlite3_bind_int64(stmt, 1, ts_ms);
+  BindText(stmt, 2, media_type);
+  BindText(stmt, 3, url);
+  BindText(stmt, 4, file_path);
+  BindText(stmt, 5, message);
+  BindText(stmt, 6, MimeTypeForPath(file_path));
+  sqlite3_bind_int64(stmt, 7,
+                     has_content ? static_cast<int64_t>(content.size()) : 0);
+  if (has_content) {
+    sqlite3_bind_blob(stmt, 8, content.data(), static_cast<int>(content.size()),
+                      SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 8);
+  }
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
 }
@@ -324,7 +428,9 @@ std::string DatabaseService::RecentSensorJson(int limit) {
 
 std::string DatabaseService::RecentMediaJson(int limit) {
   std::ostringstream sql;
-  sql << "SELECT id,ts_ms,media_type,url,file_path,message FROM media_files "
+  sql << "SELECT id,ts_ms,media_type,url,file_path,message,mime_type,"
+      << "content_size,CASE WHEN content IS NULL THEN 0 ELSE 1 END AS in_db "
+      << "FROM media_files "
       << "ORDER BY ts_ms DESC LIMIT " << ClampLimit(limit) << ";";
   return QueryRowsJson(sql.str());
 }
@@ -367,6 +473,37 @@ std::string DatabaseService::SummaryJson() {
       {"actuator_commands", json::Number(count_table("actuator_commands"))},
       {"runtime_logs", json::Number(count_table("runtime_logs"))},
   });
+}
+
+bool DatabaseService::GetMediaContent(int64_t id,
+                                      std::string& mime_type,
+                                      std::string& data) {
+  std::lock_guard<std::mutex> lock(mu_);
+  if (!db_) {
+    return false;
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT mime_type,content FROM media_files WHERE id=? AND content IS NOT "
+      "NULL LIMIT 1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  bool ok = false;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const unsigned char* mime = sqlite3_column_text(stmt, 0);
+    const void* blob = sqlite3_column_blob(stmt, 1);
+    const int bytes = sqlite3_column_bytes(stmt, 1);
+    if (blob && bytes > 0) {
+      mime_type = mime ? reinterpret_cast<const char*>(mime)
+                       : "application/octet-stream";
+      data.assign(static_cast<const char*>(blob), bytes);
+      ok = true;
+    }
+  }
+  sqlite3_finalize(stmt);
+  return ok;
 }
 
 }  // namespace storage

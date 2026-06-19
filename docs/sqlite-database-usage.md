@@ -68,9 +68,14 @@ media_type  snapshot、record_start、record
 url         网页访问路径，例如 /media/snapshot_20260618_101010_1.jpg
 file_path   板子文件路径，例如 /userdata/www/media/snapshot_20260618_101010_1.jpg
 message     后端返回消息
+mime_type   image/jpeg、video/mp4 等
+content_size 写入数据库的文件大小，单位字节
+content     图片或视频文件内容，BLOB
 ```
 
-注意：数据库只保存照片/视频的路径和访问地址，不把图片、视频二进制内容塞进 SQLite。这样数据库不会暴涨，板子空间更稳。
+注意：现在数据库会保存照片和录像文件内容，同时仍保留原文件路径和 URL。这样即使原文件还在 `/userdata/www/media/`，也可以从 SQLite 里直接取出对应图片或视频。
+
+录像文件会明显增大 SQLite 数据库体积，板子空间紧张时要定期清理旧录像记录，或者减少录像时长。
 
 ### 2.3 外设控制命令
 
@@ -139,6 +144,13 @@ GET /api/db/logs?limit=20
 
 每 3 秒刷新一次最近记录。
 
+照片/视频页签里：
+
+```text
+数据库打开  从 SQLite BLOB 读取图片或视频
+文件打开    从 /userdata/www/media 原文件路径读取图片或视频
+```
+
 ## 4. API 查看
 
 在 PC 浏览器直接访问：
@@ -177,7 +189,13 @@ sqlite3 data/iotgw.db "select id,datetime(ts_ms/1000,'unixepoch','localtime'),de
 查看最近 5 条照片/录像记录：
 
 ```bash
-sqlite3 data/iotgw.db "select id,datetime(ts_ms/1000,'unixepoch','localtime'),media_type,url,file_path from media_files order by ts_ms desc limit 5;"
+sqlite3 data/iotgw.db "select id,datetime(ts_ms/1000,'unixepoch','localtime'),media_type,content_size,url,file_path from media_files order by ts_ms desc limit 5;"
+```
+
+查看数据库里媒体内容总占用：
+
+```bash
+sqlite3 data/iotgw.db "select sum(content_size) from media_files;"
 ```
 
 查看最近 5 条控制命令：
@@ -286,9 +304,11 @@ mosquitto_pub -h 127.0.0.1 -p 1883 -t iotgw/dev/telemetry/temp -m '{"value":26.5
 
 4. 点击 LED、电机、蜂鸣器控制后，“数据库记录 -> 控制命令”应该能看到下发 JSON。
 
-5. 点击抓拍照片后，“数据库记录 -> 照片/视频”应该能看到图片 URL 和板子文件路径。
+5. 点击抓拍照片后，“数据库记录 -> 照片/视频”应该能看到图片 URL、板子文件路径和数据库内容大小。
 
-6. 查看日志：
+6. 点击“数据库打开”，应该能从 SQLite 里直接打开图片或视频。
+
+7. 查看日志：
 
 ```bash
 sqlite3 /opt/iotgw_package/data/iotgw.db "select level,message from runtime_logs order by ts_ms desc limit 10;"

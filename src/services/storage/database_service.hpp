@@ -33,6 +33,11 @@ class DatabaseService {
                    const std::string& file_path,
                    const std::string& message,
                    int64_t ts_ms);
+  void RecordMediaFile(const std::string& media_type,
+                       const std::string& url,
+                       const std::string& file_path,
+                       const std::string& message,
+                       int64_t ts_ms);
   void RecordCommand(const std::string& device_id,
                      const std::string& topic,
                      const std::string& payload,
@@ -47,9 +52,11 @@ class DatabaseService {
   std::string RecentCommandsJson(int limit);
   std::string RecentLogsJson(int limit);
   std::string SummaryJson();
+  bool GetMediaContent(int64_t id, std::string& mime_type, std::string& data);
 
  private:
   bool Exec(const std::string& sql);
+  bool ColumnExists(const std::string& table, const std::string& column);
   bool PrepareSchema();
   std::string QueryRowsJson(const std::string& sql);
 
