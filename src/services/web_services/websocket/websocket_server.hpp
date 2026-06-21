@@ -96,8 +96,13 @@ class MongooseServer {
             "\r\nExpires: 0\r\n";
         if (content_type == "image/jpeg" || content_type == "video/mp4" ||
             content_type == "application/octet-stream") {
-          mg_http_reply(c, status, headers.c_str(), "%.*s",
-                        static_cast<int>(response.size()), response.data());
+          mg_printf(c,
+                    "HTTP/1.1 %d OK\r\n"
+                    "Content-Length: %lu\r\n"
+                    "%s\r\n",
+                    status, static_cast<unsigned long>(response.size()),
+                    headers.c_str());
+          mg_send(c, response.data(), response.size());
         } else {
           mg_http_reply(c, status, headers.c_str(), "%s", response.c_str());
         }

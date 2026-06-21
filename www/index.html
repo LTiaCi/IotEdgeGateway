@@ -949,12 +949,11 @@
             controlBusyUntil = Date.now() + 1500;
             const protocolLabel = activeProtocol === 'mqtt' ? 'MQTT' : 'ZigBee';
             addLog(`${label} [${protocolLabel}]: ${JSON.stringify(payload)}`);
-            if (activeProtocol === 'zigbee') {
-                addLog(`ZigBee 通讯接口待接入，当前未下发 ${label}`);
-                return;
-            }
             try {
-                const res = await fetch(`/api/actuators/${id}/set`, {
+                const apiPath = activeProtocol === 'zigbee'
+                    ? `/api/zigbee/actuators/${id}/set`
+                    : `/api/actuators/${id}/set`;
+                const res = await fetch(apiPath, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -964,7 +963,7 @@
                     throw new Error(result.error || `HTTP ${res.status}`);
                 }
                 if (result.ok) {
-                    addLog(`✅ ${label} 已下发到 MQTT`);
+                    addLog(`✅ ${label} 已下发到 ${protocolLabel}`);
                 } else {
                     addLog(`❌ ${label} 未下发: ${JSON.stringify(result)}`);
                 }
@@ -990,7 +989,8 @@
         function scheduleMotorUpdate() {
             updateMotorSpeedLabel();
             clearTimeout(motorUpdateTimer);
-            motorUpdateTimer = setTimeout(updateMotor, 200);
+            const delayMs = activeProtocol === 'zigbee' ? 600 : 200;
+            motorUpdateTimer = setTimeout(updateMotor, delayMs);
         }
 
         function updateLed() {
@@ -1021,6 +1021,7 @@ function setMotorDirUser(dir) {
 
 
         function updateMotor() {
+    clearTimeout(motorUpdateTimer);
     const sw = document.getElementById('motor_sw').checked ? '开启' : '关闭';
     const sp = parseInt(document.getElementById('motor_sp').value, 10);
     updateMotorSpeedLabel();

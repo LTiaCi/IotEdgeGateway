@@ -54,8 +54,10 @@ set(IOTGW_COMMON_SOURCES
   src/services/system_services/camera/camera_manager.cpp
   src/services/storage/database_service.cpp
   src/core/protocol_adapters/mqtt_adapter/mqtt_client.cpp
+  src/core/protocol_adapters/zigbee_adapter/zigbee_serial_adapter.cpp
   src/services/web_services/api/system_api.cpp
   src/services/web_services/api/device_api.cpp
+  src/services/web_services/api/zigbee_api.cpp
   src/services/web_services/api/camera_api.cpp
   src/services/web_services/api/database_api.cpp
   src/services/web_services/api/rule_api.cpp

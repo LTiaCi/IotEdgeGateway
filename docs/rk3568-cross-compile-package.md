@@ -694,9 +694,57 @@ mosquitto_sub -h 127.0.0.1 -p 1883 -t 'iotgw/dev/#' -v
 
 能看到单片机发来的数据，说明 MQTT 到板子没问题；再检查 `iotgw_gateway` 是否显示 `MQTT connected`。
 
-## 15. 常见问题
+## 15. ZigBee DL-20 透明串口联调
 
-### 15.1 板子上网页打不开
+当前 ZigBee 默认配置：
+
+```yaml
+zigbee:
+  enabled: true
+  device: "/dev/ttyS4"
+  baudrate: 9600
+```
+
+DL-20 使用透明串口传输，串口参数为：
+
+```text
+9600 8N1，无流控，3.3V TTL
+```
+
+启动网关后，可以先看 ZigBee 状态：
+
+```text
+http://RK3568_IP:8080/api/zigbee/status
+```
+
+正常示例：
+
+```json
+{"ok":true,"open":true,"device":"/dev/ttyS4","baudrate":9600}
+```
+
+如果 `open:false`，说明 `/dev/ttyS4` 没打开成功，先检查串口是否接错或被占用。
+
+手动测试串口：
+
+```bash
+stty -F /dev/ttyS4 9600 cs8 -cstopb -parenb -ixon -ixoff -crtscts
+cat /dev/ttyS4
+```
+
+前端选择 `ZigBee` 后，LED、电机、蜂鸣器命令会通过 `/dev/ttyS4` 发出一行 JSON。
+
+ZigBee 接收传感器数据时，单片机发送：
+
+```json
+{"type":"telemetry","id":"temp","value":25.6}
+```
+
+每条 JSON 末尾必须带换行 `\n`。网关收到后会复用现有 `/api/status` 状态刷新逻辑。
+
+## 16. 常见问题
+
+### 16.1 板子上网页打不开
 
 在板子上检查 8080 是否监听：
 
@@ -720,7 +768,7 @@ http://板子IP:8080/
 
 不是 `127.0.0.1`。
 
-### 15.2 启动时报 MQTT 错误
+### 16.2 启动时报 MQTT 错误
 
 如果你暂时不用 MQTT，可以先忽略。网页和视频服务仍然能启动。
 
@@ -746,7 +794,7 @@ mqtt:
 
 然后重新打包或直接修改板子上 `/opt/iotgw_package/config/environments/rk3568.yaml`。
 
-### 15.3 点击开启视频失败
+### 16.3 点击开启视频失败
 
 按顺序检查：
 
@@ -761,7 +809,7 @@ ls -ld /mnt/www/stream /userdata/www
 
 再看程序终端日志里有没有 GStreamer pipeline 的报错。
 
-### 15.4 编译时报找不到 gstreamer-1.0
+### 16.4 编译时报找不到 gstreamer-1.0
 
 当前项目已经改成运行时调用 `gst-launch-1.0`，正常不会再因为缺少 `gstreamer-1.0.pc` 导致 CMake 失败。
 
@@ -789,7 +837,7 @@ cmake -S . -B build-rk3568 \
 cmake --build build-rk3568 -j"$(nproc)"
 ```
 
-## 16. 每次修改代码后的固定操作
+## 17. 每次修改代码后的固定操作
 
 以后你每次改完项目，基本就按这几步走。这个流程会同时更新后端程序、`www/index.html` 前端页面、配置文件。
 

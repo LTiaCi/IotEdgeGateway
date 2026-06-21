@@ -33,6 +33,11 @@ mqtt:
   clean_session: true
   topic_prefix: "iotgw/dev/"
 
+zigbee:
+  enabled: true
+  device: "/dev/ttyS4"
+  baudrate: 9600
+
 camera:
   device: "/dev/video9"
   stream_www_root: "/mnt/www"

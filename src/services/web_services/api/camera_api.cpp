@@ -3,6 +3,9 @@
 #include "core/common/utils/json_utils.hpp"
 #include "core/common/utils/time_utils.hpp"
 
+#include <fstream>
+#include <sstream>
+
 namespace iotgw {
 namespace services {
 namespace web_services {
@@ -21,6 +24,17 @@ ApiResponse ResultToResponse(
                         {"file_path", json::Quote(result.file_path)}})};
 }
 
+bool ReadFileBytes(const std::string& file_path, std::string& data) {
+  std::ifstream in(file_path.c_str(), std::ios::binary);
+  if (!in) {
+    return false;
+  }
+  std::ostringstream out;
+  out << in.rdbuf();
+  data = out.str();
+  return true;
+}
+
 }  // namespace
 
 ApiResponse HandleCameraApi(const std::string& method,
@@ -29,16 +43,29 @@ ApiResponse HandleCameraApi(const std::string& method,
   if (!ctx.camera) {
     return {};
   }
-  if (method == "GET" && path == "/api/camera/status") {
+  const std::string route = path.substr(0, path.find('?'));
+  if (method == "GET" && route == "/api/camera/status") {
     return ResultToResponse(ctx.camera->Status());
   }
-  if (method == "POST" && path == "/api/camera/start_stream") {
+  if (method == "GET" && route == "/api/camera/preview.jpg") {
+    const auto result = ctx.camera->PreviewFrame();
+    if (!result.ok) {
+      return ResultToResponse(result, 200);
+    }
+    std::string data;
+    if (!ReadFileBytes(result.file_path, data)) {
+      return {500, "application/json",
+              "{\"ok\":false,\"message\":\"preview_read_failed\"}"};
+    }
+    return {200, "image/jpeg", data};
+  }
+  if (method == "POST" && route == "/api/camera/start_stream") {
     return ResultToResponse(ctx.camera->StartStream());
   }
-  if (method == "POST" && path == "/api/camera/stop_stream") {
+  if (method == "POST" && route == "/api/camera/stop_stream") {
     return ResultToResponse(ctx.camera->StopStream());
   }
-  if (method == "POST" && path == "/api/camera/snapshot") {
+  if (method == "POST" && route == "/api/camera/snapshot") {
     const auto result = ctx.camera->Snapshot();
     if (ctx.database && result.ok) {
       ctx.database->RecordMediaFile("snapshot", result.url, result.file_path,
@@ -47,7 +74,7 @@ ApiResponse HandleCameraApi(const std::string& method,
     }
     return ResultToResponse(result);
   }
-  if (method == "POST" && path == "/api/camera/start_record") {
+  if (method == "POST" && route == "/api/camera/start_record") {
     const auto result = ctx.camera->StartRecord();
     if (ctx.database && result.ok) {
       ctx.database->RecordMedia("record_start", result.url, result.file_path,
@@ -56,7 +83,7 @@ ApiResponse HandleCameraApi(const std::string& method,
     }
     return ResultToResponse(result);
   }
-  if (method == "POST" && path == "/api/camera/stop_record") {
+  if (method == "POST" && route == "/api/camera/stop_record") {
     const auto result = ctx.camera->StopRecord();
     if (ctx.database && result.ok) {
       ctx.database->RecordMediaFile("record", result.url, result.file_path,

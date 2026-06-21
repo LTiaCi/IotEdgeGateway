@@ -35,6 +35,7 @@ class CameraManager {
   bool Init(const CameraOptions& options);
   CameraResult StartStream();
   CameraResult StopStream();
+  CameraResult PreviewFrame();
   CameraResult Snapshot();
   CameraResult StartRecord();
   CameraResult StopRecord();
@@ -49,6 +50,8 @@ class CameraManager {
   std::string MediaUrl(const std::string& filename) const;
   std::string StreamPlaylistPath() const;
   std::string StreamPidPath() const;
+  std::string PreviewPath() const;
+  std::string PreviewPidPath() const;
   std::string RecordPidPath() const;
   int RunCommand(const std::string& command) const;
 

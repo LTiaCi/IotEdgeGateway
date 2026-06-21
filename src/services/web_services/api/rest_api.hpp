@@ -3,6 +3,7 @@
 #include "core/control/rule_engine.hpp"
 #include "core/device/manager/device_manager.hpp"
 #include "core/protocol_adapters/mqtt_adapter/mqtt_adapter.hpp"
+#include "core/protocol_adapters/zigbee_adapter/zigbee_serial_adapter.hpp"
 #include "services/system_services/camera/camera_manager.hpp"
 #include "services/storage/database_service.hpp"
 
@@ -30,6 +31,7 @@ struct ApiContext {
   core::device::manager::DeviceRegistry* devices = nullptr;
   core::control::RuleEngine* rules = nullptr;
   core::protocol_adapters::mqtt_adapter::MqttClient* mqtt = nullptr;
+  core::protocol_adapters::zigbee_adapter::ZigbeeSerialAdapter* zigbee = nullptr;
   system_services::camera::CameraManager* camera = nullptr;
   storage::DatabaseService* database = nullptr;
   ControlState* control_state = nullptr;
@@ -54,6 +56,11 @@ ApiResponse HandleDeviceApi(const std::string& method,
                             const std::string& body,
                             ApiContext& ctx);
 
+ApiResponse HandleZigbeeApi(const std::string& method,
+                             const std::string& path,
+                             const std::string& body,
+                             ApiContext& ctx);
+
 ApiResponse HandleRuleApi(const std::string& method,
                           const std::string& path,
                           ApiContext& ctx);
@@ -75,6 +82,10 @@ inline ApiResponse DispatchApi(const std::string& method,
     return response;
   }
   response = HandleDeviceApi(method, path, body, ctx);
+  if (response.status != 404) {
+    return response;
+  }
+  response = HandleZigbeeApi(method, path, body, ctx);
   if (response.status != 404) {
     return response;
   }

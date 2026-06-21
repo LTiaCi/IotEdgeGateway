@@ -8,6 +8,7 @@
 #include "core/device/manager/device_manager.hpp"
 #include "core/device/model/device_entity.hpp"
 #include "core/protocol_adapters/mqtt_adapter/mqtt_adapter.hpp"
+#include "core/protocol_adapters/zigbee_adapter/zigbee_serial_adapter.hpp"
 #include "services/system_services/camera/camera_manager.hpp"
 #include "services/storage/database_service.hpp"
 #include "services/web_services/api/rest_api.hpp"
@@ -33,6 +34,8 @@ using Level = core::common::log::Level;
 using DeviceEntity = core::device::model::DeviceEntity;
 using DeviceRegistry = core::device::manager::DeviceRegistry;
 using MqttClient = core::protocol_adapters::mqtt_adapter::MqttClient;
+using ZigbeeSerialAdapter =
+    core::protocol_adapters::zigbee_adapter::ZigbeeSerialAdapter;
 using MongooseServer = services::web_services::websocket::MongooseServer;
 using RuleEngine = core::control::RuleEngine;
 using CameraManager = services::system_services::camera::CameraManager;
@@ -257,6 +260,22 @@ bool IsTelemetryTopic(const std::string& topic) {
   return topic.find("/telemetry/") != std::string::npos;
 }
 
+bool TryParseZigbeeTelemetry(const std::string& line,
+                             std::string& topic,
+                             std::string& payload,
+                             const std::string& topic_prefix) {
+  const std::string type = json::GetJsonString(line, "type");
+  const std::string id = json::GetJsonString(line, "id");
+  double value = 0.0;
+  if (type != "telemetry" || id.empty() ||
+      !json::GetJsonNumber(line, "value", value)) {
+    return false;
+  }
+  topic = topic_prefix + "telemetry/" + id;
+  payload = json::Object({{"value", json::Number(value)}});
+  return true;
+}
+
 void LogRuleAction(const std::shared_ptr<Logger>& logger,
                    const core::control::Action& action) {
   if (!logger) return;
@@ -332,7 +351,7 @@ int GatewayCore::Run(const GatewayArgs& args) {
 
   auto ingest = [&](const std::string& topic, const std::string& payload) {
     if (!IsTelemetryTopic(topic)) {
-      logger->Info("MQTT non-telemetry ignored topic=" + topic +
+      logger->Info("Telemetry non-telemetry ignored topic=" + topic +
                    " payload=" + payload);
       return;
     }
@@ -341,10 +360,10 @@ int GatewayCore::Run(const GatewayArgs& args) {
     std::string device_id;
     registry.UpsertMqttDeviceFromTopic(topic, payload, now, device_id);
     if (!device_id.empty()) {
-      logger->Info("MQTT telemetry device=" + device_id + " topic=" + topic +
+      logger->Info("Telemetry device=" + device_id + " topic=" + topic +
                    " payload=" + payload);
     } else {
-      logger->Warn("MQTT telemetry ignored topic=" + topic + " payload=" +
+      logger->Warn("Telemetry ignored topic=" + topic + " payload=" +
                    payload);
     }
 
@@ -391,6 +410,36 @@ int GatewayCore::Run(const GatewayArgs& args) {
 
   mqtt.SetMessageHandler(ingest);
 
+  ZigbeeSerialAdapter zigbee(logger);
+  const bool zigbee_enabled = cfg.GetBoolOr("zigbee.enabled", false);
+  const std::string zigbee_topic_prefix =
+      cfg.GetStringOr("mqtt.topic_prefix", "iotgw/dev/");
+  int64_t last_zigbee_ignored_warn_ms = 0;
+  if (zigbee_enabled) {
+    ZigbeeSerialAdapter::Options zigbee_options;
+    zigbee_options.device = cfg.GetStringOr("zigbee.device", "/dev/ttyS4");
+    zigbee_options.baudrate =
+        static_cast<int>(cfg.GetInt64Or("zigbee.baudrate", 9600));
+    zigbee.SetLineHandler([&](const std::string& line) {
+      std::string topic;
+      std::string payload;
+      if (TryParseZigbeeTelemetry(line, topic, payload, zigbee_topic_prefix)) {
+        logger->Info("ZigBee telemetry topic=" + topic + " payload=" + payload);
+        ingest(topic, payload);
+      } else {
+        const int64_t now = core::common::time::NowUnixMs();
+        if (now - last_zigbee_ignored_warn_ms >= 3000) {
+          logger->Warn("ZigBee line ignored len=" + std::to_string(line.size()) +
+                       " content=" + line);
+          last_zigbee_ignored_warn_ms = now;
+        }
+      }
+    });
+    zigbee.Open(zigbee_options);
+  } else {
+    logger->Info("ZigBee disabled by config");
+  }
+
   const bool mqtt_enabled = cfg.GetBoolOr("mqtt.enabled", false);
   if (mqtt_enabled) {
     MqttClient::Options mqtt_options;
@@ -416,6 +465,7 @@ int GatewayCore::Run(const GatewayArgs& args) {
   api_ctx.devices = &registry;
   api_ctx.rules = &rules;
   api_ctx.mqtt = &mqtt;
+  api_ctx.zigbee = &zigbee;
   api_ctx.camera = &camera;
   api_ctx.database = database.get();
   api_ctx.control_state = &control_state;
@@ -458,6 +508,7 @@ int GatewayCore::Run(const GatewayArgs& args) {
     server.Poll(50);
     const int64_t now = core::common::time::NowUnixMs();
     mqtt.Poll(now);
+    zigbee.Poll();
     if (now - last_heartbeat >= 10000) {
       logger->Info("heartbeat devices=" + std::to_string(registry.List().size()) +
                    " rules=" + std::to_string(rules.Rules().size()));

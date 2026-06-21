@@ -45,6 +45,8 @@ CameraResult CameraManager::StartStream() {
 
   RunCommand("rm -f " + options_.stream_root + "/*.ts " + options_.stream_root +
              "/*.m3u8");
+  RunCommand("rm -f " + PreviewPath() + " /tmp/iotgw_preview.tmp.jpg " +
+             PreviewPidPath());
 
   std::ostringstream pipeline;
   pipeline << "gst-launch-1.0 -e "
@@ -53,12 +55,21 @@ CameraResult CameraManager::StartStream() {
            << ",height=" << options_.height << ",framerate=" << options_.fps
            << "/1 "
            << "! videoconvert "
+           << "! tee name=t "
+           << "t. ! queue "
            << "! mpph264enc "
            << "! h264parse "
            << "! mpegtsmux "
            << "! hlssink location=" << options_.stream_root
            << "/segment%05d.ts playlist-location=" << StreamPlaylistPath()
-           << " target-duration=1 max-files=5";
+           << " target-duration=1 max-files=5 "
+           << "t. ! queue leaky=downstream max-size-buffers=1 "
+           << "! videorate "
+           << "! videoscale "
+           << "! video/x-raw,framerate=5/1,width=480,height=270 "
+           << "! jpegenc quality=70 "
+           << "! multifilesink location=" << PreviewPath()
+           << " index=0 post-messages=false sync=false async=false";
 
   const std::string cmd = "sh -c '" + pipeline.str() + " > /tmp/iotgw_gst.log 2>&1 & echo $! > " +
                           StreamPidPath() + "'";
@@ -84,12 +95,24 @@ CameraResult CameraManager::StopStream() {
   RunCommand("kill -2 $(cat " + StreamPidPath() +
              ") 2>/dev/null; sleep 1; kill $(cat " + StreamPidPath() +
              ") 2>/dev/null; rm -f " + StreamPidPath());
+  RunCommand("rm -f " + PreviewPidPath() + " " + PreviewPath() +
+             " /tmp/iotgw_preview.tmp.jpg");
   streaming_ = false;
   RunCommand("rm -f " + options_.stream_root + "/*.ts " + options_.stream_root +
              "/*.m3u8");
   if (logger_) logger_->Info("Camera HLS stream process stopped");
   return {true, "stream_stopped", "", ""};
 #endif
+}
+
+CameraResult CameraManager::PreviewFrame() {
+  if (!streaming_) {
+    return {false, "stream_not_started", "", ""};
+  }
+  if (!FileExists(PreviewPath())) {
+    return {false, "preview_failed", "", ""};
+  }
+  return {true, "preview_ready", "", PreviewPath()};
 }
 
 CameraResult CameraManager::Snapshot() {
@@ -189,6 +212,14 @@ std::string CameraManager::StreamPlaylistPath() const {
 
 std::string CameraManager::StreamPidPath() const {
   return "/tmp/iotgw_gst_stream.pid";
+}
+
+std::string CameraManager::PreviewPath() const {
+  return "/tmp/iotgw_preview.jpg";
+}
+
+std::string CameraManager::PreviewPidPath() const {
+  return "/tmp/iotgw_ffmpeg_preview.pid";
 }
 
 std::string CameraManager::RecordPidPath() const {
