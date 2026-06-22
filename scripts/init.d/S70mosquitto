@@ -1,0 +1,50 @@
+#!/bin/sh
+
+APP_NAME=mosquitto
+PID_FILE=/var/run/mosquitto.pid
+LOG_FILE=/tmp/mosquitto.log
+
+start() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "$APP_NAME already running"
+        return 0
+    fi
+
+    if ! command -v mosquitto >/dev/null 2>&1; then
+        echo "mosquitto not found"
+        return 1
+    fi
+
+    nohup mosquitto -p 1883 >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    echo "$APP_NAME started"
+}
+
+stop() {
+    if [ -f "$PID_FILE" ]; then
+        kill "$(cat "$PID_FILE")" 2>/dev/null || true
+        rm -f "$PID_FILE"
+    fi
+    killall mosquitto 2>/dev/null || true
+    echo "$APP_NAME stopped"
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        sleep 1
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -24,10 +24,12 @@ mkdir -p "${PACKAGE_DIR}/config"
 mkdir -p "${PACKAGE_DIR}/www"
 mkdir -p "${PACKAGE_DIR}/data/logs"
 mkdir -p "${PACKAGE_DIR}/data/media"
+mkdir -p "${PACKAGE_DIR}/init.d"
 
 cp "${BIN}" "${PACKAGE_DIR}/bin/iotgw_gateway"
 cp -r config/* "${PACKAGE_DIR}/config/"
 cp -r www/* "${PACKAGE_DIR}/www/"
+cp -r scripts/init.d/* "${PACKAGE_DIR}/init.d/"
 
 cat > "${PACKAGE_DIR}/start.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -42,6 +44,7 @@ EOF
 
 chmod +x "${PACKAGE_DIR}/start.sh"
 chmod +x "${PACKAGE_DIR}/bin/iotgw_gateway"
+chmod +x "${PACKAGE_DIR}/init.d/"*
 
 echo "Runtime package created: ${PACKAGE_DIR}"
 echo "Copy this directory to RK3568 and run:"
