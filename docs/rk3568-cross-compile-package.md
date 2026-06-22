@@ -257,9 +257,9 @@ dist/iotgw_package/
 ├── config/
 ├── data/
 ├── init.d/
-│   ├── S45wifi_jk
-│   ├── S70mosquitto
-│   └── S85iotgw
+│   ├── S81wifi_jk
+│   ├── S85mosquitto
+│   └── S90iotgw
 ├── www/
 │   ├── index.html
 │   └── js/hls.min.js
@@ -301,22 +301,33 @@ scp -r dist/iotgw_package root@192.168.31.238:/opt/
 如果要安装 MQTT 和网关开机自启脚本，再执行：
 
 ```bash
-scp dist/iotgw_package/init.d/S45wifi_jk root@192.168.31.238:/etc/init.d/
-scp dist/iotgw_package/init.d/S70mosquitto root@192.168.31.238:/etc/init.d/
-scp dist/iotgw_package/init.d/S85iotgw root@192.168.31.238:/etc/init.d/
+scp dist/iotgw_package/init.d/S81wifi_jk root@192.168.31.238:/etc/init.d/
+scp dist/iotgw_package/init.d/S85mosquitto root@192.168.31.238:/etc/init.d/
+scp dist/iotgw_package/init.d/S90iotgw root@192.168.31.238:/etc/init.d/
 
 ssh root@192.168.31.238
-chmod +x /etc/init.d/S45wifi_jk /etc/init.d/S70mosquitto /etc/init.d/S85iotgw
+chmod +x /etc/init.d/S81wifi_jk /etc/init.d/S85mosquitto /etc/init.d/S90iotgw
 chmod +x /opt/iotgw_package/start.sh /opt/iotgw_package/bin/iotgw_gateway
 ```
+
+不要禁用板子原厂自带的启动脚本，例如 `S50launcher`、`S80wificonnect`、`S99input-event-daemon`。这些脚本可能同时负责触摸、显示、输入设备或无线驱动初始化。我们的脚本只新增 `S81wifi_jk`、`S85mosquitto`、`S90iotgw`，不要替换原厂基础启动链路。
 
 推荐开机顺序：
 
 ```text
-S45wifi_jk -> S70mosquitto -> S85iotgw -> S95qtRk
+S81wifi_jk -> S85mosquitto -> S90iotgw -> S95qtRk
 ```
 
 也就是先连接 WiFi，再启动 MQTT Broker，再启动网关后端，最后启动 Qt 界面。
+
+`S81wifi_jk` 是后台重试脚本：开机时先返回，不阻塞触摸和 Qt 启动；后台等待 `wlan0` 出现，再连接热点 `jk`，密码 `woniu@jiankong.com`。如果开机后 WiFi 没连上，先查看：
+
+```bash
+cat /tmp/wifi_jk.log
+ifconfig wlan0
+wpa_cli -i wlan0 status
+ps | grep -E "wpa|udhcpc|dhcpcd" | grep -v grep
+```
 
 如果你的板子用户名不是 `root`，比如是 `topeet`，就改成：
 

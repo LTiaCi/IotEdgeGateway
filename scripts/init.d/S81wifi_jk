@@ -1,0 +1,198 @@
+#!/bin/sh
+
+APP_NAME=wifi_jk
+IFACE="${WIFI_IFACE:-wlan0}"
+SSID="jk"
+PSK="woniu@jiankong.com"
+LOG_FILE=/tmp/wifi_jk.log
+WORKER_PID=/var/run/wifi_jk.pid
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG_FILE"
+}
+
+wait_for_iface() {
+    i=0
+    while [ "$i" -lt 90 ]; do
+        if [ -d "/sys/class/net/$IFACE" ]; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    return 1
+}
+
+iface_up() {
+    ip link set "$IFACE" up >> "$LOG_FILE" 2>&1 || ifconfig "$IFACE" up >> "$LOG_FILE" 2>&1 || true
+}
+
+has_ip() {
+    if command -v ip >/dev/null 2>&1; then
+        ip addr show "$IFACE" 2>/dev/null | grep -q "inet "
+    else
+        ifconfig "$IFACE" 2>/dev/null | grep -q "inet addr:"
+    fi
+}
+
+renew_ip() {
+    if has_ip; then
+        log "$IFACE already has IPv4 address"
+        return 0
+    fi
+
+    if command -v udhcpc >/dev/null 2>&1; then
+        udhcpc -i "$IFACE" -q -t 8 -n >> "$LOG_FILE" 2>&1 || true
+    elif command -v dhcpcd >/dev/null 2>&1; then
+        dhcpcd "$IFACE" >> "$LOG_FILE" 2>&1 || true
+    fi
+}
+
+already_connected() {
+    if command -v wpa_cli >/dev/null 2>&1; then
+        wpa_cli -i "$IFACE" status 2>/dev/null | grep -q "wpa_state=COMPLETED" && has_ip
+    else
+        has_ip
+    fi
+}
+
+connect_with_wpa_cli() {
+    command -v wpa_cli >/dev/null 2>&1 || return 1
+    wpa_cli -i "$IFACE" status >/dev/null 2>&1 || return 1
+
+    NET_ID="$(wpa_cli -i "$IFACE" add_network 2>/dev/null | tail -n 1)"
+    [ -n "$NET_ID" ] || return 1
+
+    wpa_cli -i "$IFACE" set_network "$NET_ID" ssid "\"$SSID\"" >> "$LOG_FILE" 2>&1 || return 1
+    wpa_cli -i "$IFACE" set_network "$NET_ID" psk "\"$PSK\"" >> "$LOG_FILE" 2>&1 || return 1
+    wpa_cli -i "$IFACE" enable_network "$NET_ID" >> "$LOG_FILE" 2>&1 || return 1
+    wpa_cli -i "$IFACE" select_network "$NET_ID" >> "$LOG_FILE" 2>&1 || return 1
+    wpa_cli -i "$IFACE" save_config >> "$LOG_FILE" 2>&1 || true
+    return 0
+}
+
+connect_with_wpa_supplicant() {
+    command -v wpa_supplicant >/dev/null 2>&1 || return 1
+
+    CONF=/tmp/wifi_jk_wpa_supplicant.conf
+    cat > "$CONF" <<EOF
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+network={
+    ssid="$SSID"
+    psk="$PSK"
+    key_mgmt=WPA-PSK
+}
+EOF
+
+    mkdir -p /var/run/wpa_supplicant
+    if ps | grep "[w]pa_supplicant" | grep -q "$IFACE"; then
+        log "wpa_supplicant for $IFACE already running"
+        return 0
+    fi
+    wpa_supplicant -B -i "$IFACE" -c "$CONF" >> "$LOG_FILE" 2>&1
+}
+
+wait_for_connected() {
+    i=0
+    while [ "$i" -lt 20 ]; do
+        if wpa_cli -i "$IFACE" status 2>/dev/null | grep -q "wpa_state=COMPLETED"; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    return 1
+}
+
+connect_once() {
+    if ! wait_for_iface; then
+        log "interface $IFACE not found"
+        return 1
+    fi
+
+    iface_up
+
+    if already_connected; then
+        log "$IFACE already connected"
+        return 0
+    fi
+
+    if connect_with_wpa_cli; then
+        log "connect command sent by wpa_cli"
+    elif connect_with_wpa_supplicant; then
+        log "wpa_supplicant started"
+    else
+        log "failed to start WiFi connection"
+        return 1
+    fi
+
+    wait_for_connected || log "WiFi association not confirmed yet"
+    renew_ip
+    ip addr show "$IFACE" >> "$LOG_FILE" 2>&1 || ifconfig "$IFACE" >> "$LOG_FILE" 2>&1 || true
+    has_ip
+}
+
+worker() {
+    : > "$LOG_FILE"
+    log "$APP_NAME worker start iface=$IFACE ssid=$SSID"
+
+    # Leave vendor boot scripts alone, then connect after wlan0/input/display settle.
+    sleep 15
+
+    attempt=1
+    while [ "$attempt" -le 8 ]; do
+        log "connect attempt $attempt"
+        if connect_once; then
+            log "$APP_NAME connected"
+            exit 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 10
+    done
+
+    log "$APP_NAME failed after retries"
+    exit 1
+}
+
+start() {
+    if [ -f "$WORKER_PID" ] && kill -0 "$(cat "$WORKER_PID")" 2>/dev/null; then
+        echo "$APP_NAME worker already running"
+        return 0
+    fi
+
+    "$0" worker >/dev/null 2>&1 &
+    echo $! > "$WORKER_PID"
+    echo "$APP_NAME worker started"
+}
+
+stop() {
+    log "$APP_NAME stop"
+    if [ -f "$WORKER_PID" ]; then
+        kill "$(cat "$WORKER_PID")" 2>/dev/null || true
+        rm -f "$WORKER_PID"
+    fi
+}
+
+case "$1" in
+    start|"")
+        start
+        ;;
+    worker)
+        worker
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        sleep 1
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0
