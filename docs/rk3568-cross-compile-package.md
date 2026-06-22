@@ -257,6 +257,7 @@ dist/iotgw_package/
 ├── config/
 ├── data/
 ├── init.d/
+│   ├── S45wifi_jk
 │   ├── S70mosquitto
 │   └── S85iotgw
 ├── www/
@@ -300,21 +301,22 @@ scp -r dist/iotgw_package root@192.168.31.238:/opt/
 如果要安装 MQTT 和网关开机自启脚本，再执行：
 
 ```bash
+scp dist/iotgw_package/init.d/S45wifi_jk root@192.168.31.238:/etc/init.d/
 scp dist/iotgw_package/init.d/S70mosquitto root@192.168.31.238:/etc/init.d/
 scp dist/iotgw_package/init.d/S85iotgw root@192.168.31.238:/etc/init.d/
 
 ssh root@192.168.31.238
-chmod +x /etc/init.d/S70mosquitto /etc/init.d/S85iotgw
+chmod +x /etc/init.d/S45wifi_jk /etc/init.d/S70mosquitto /etc/init.d/S85iotgw
 chmod +x /opt/iotgw_package/start.sh /opt/iotgw_package/bin/iotgw_gateway
 ```
 
 推荐开机顺序：
 
 ```text
-S70mosquitto -> S85iotgw -> S95qtRk
+S45wifi_jk -> S70mosquitto -> S85iotgw -> S95qtRk
 ```
 
-也就是先启动 MQTT Broker，再启动网关后端，最后启动 Qt 界面。
+也就是先连接 WiFi，再启动 MQTT Broker，再启动网关后端，最后启动 Qt 界面。
 
 如果你的板子用户名不是 `root`，比如是 `topeet`，就改成：
 
